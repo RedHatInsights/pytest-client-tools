@@ -89,21 +89,26 @@ def test_config(request):
 
 
 @pytest.fixture(scope="session")
-def candlepin(request):
+def candlepin(request, tmp_path_factory):
     with contextlib.ExitStack() as stack:
         start_container = not request.config.getoption(
             "--candlepin-container-is-running"
         )
         initial_wait = 0
+        verify = False
         if start_container:
-            stack.enter_context(_create_candlepin_container())
+            container = stack.enter_context(_create_candlepin_container())
             # candlepin takes a while to start
             initial_wait = 5
+            ca_cert = str(tmp_path_factory.mktemp("candlepin") / "ca.crt")
+            container.cp("$C:/etc/candlepin/certs/candlepin-ca.crt", ca_cert)
+            verify = ca_cert
         candlepin = Candlepin(
             host="localhost",
             port=8443,
             prefix="/candlepin",
             insecure=True,
+            verify=verify,
         )
         ping_candlepin(candlepin, initial_wait=initial_wait)
         yield candlepin

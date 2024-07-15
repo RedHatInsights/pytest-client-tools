@@ -14,14 +14,14 @@ class Candlepin:
     This class represents a Candlepin server.
     """
 
-    def __init__(self, host, port, prefix, insecure):
+    def __init__(self, host, port, prefix, insecure, verify=False):
         self._host = host
         self._port = port
         self._prefix = prefix
         self._insecure = insecure
         self._rest_client = RestClient(
             base_url=f"https://{self._host}:{self._port}{self._prefix}",
-            verify=False,
+            verify=verify,
         )
 
     @property
