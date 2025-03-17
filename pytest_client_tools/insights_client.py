@@ -46,6 +46,10 @@ INSIGHTS_CLIENT_FILES_TO_SAVE = (
         pathlib.Path("/var/log/insights-client/insights-client-payload.log.3"),
         remove_at_start=True,
     ),
+    SavedFile(
+        pathlib.Path("/etc/insights-client/machine-id"),
+        remove_at_start=True,
+    ),
 )
 
 
