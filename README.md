@@ -14,7 +14,7 @@ Plugin for `pytest` to test RHSM client tools: `subscription-manager`,
 You can install it using `pip` from this git repository, i.e.
 
 ```bash
-$ pip install git+https://github.com/ptoscano/pytest-client-tools@main
+$ pip install git+https://github.com/RedHatInsights/pytest-client-tools@main
 ```
 
 ## Usage
