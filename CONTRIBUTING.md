@@ -3,7 +3,7 @@
 pytest-client-tools accepts code contributions via merge requests
 on the GitHub project:
 
-https://github.com/ptoscano/pytest-client-tools/pulls
+https://github.com/RedHatInsights/pytest-client-tools/pulls
 
 The source code is indented using `black`, using the default configuration of
 88 characters per line.

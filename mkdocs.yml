@@ -12,7 +12,7 @@ theme:
     - python
     - toml
 
-repo_url: https://github.com/ptoscano/pytest-client-tools
+repo_url: https://github.com/RedHatInsights/pytest-client-tools
 
 nav:
   - Home: index.md

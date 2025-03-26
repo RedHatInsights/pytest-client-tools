@@ -1,7 +1,7 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: pytest-client-tools
 Upstream-Contact: Pino Toscano <ptoscano@redhat.com>
-Source: https://github.com/ptoscano/pytest-client-tools
+Source: https://github.com/RedHatInsights/pytest-client-tools
 
 Files: *.md
 Copyright: Red Hat
