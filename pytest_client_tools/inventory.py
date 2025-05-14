@@ -1,10 +1,11 @@
 # SPDX-FileCopyrightText: Red Hat
 # SPDX-License-Identifier: MIT
 
-from .restclient import RestClient
 import requests
-import logger
 from time import sleep
+
+from .logger import LOGGER
+from .restclient import RestClient
 
 
 class Inventory:
@@ -70,7 +71,7 @@ class Inventory:
                 if res_json["total"] == 1:
                     return res_json["results"][0]
             except requests.exceptions.RequestException as e:
-                logger.warning(f"Attempt {attempt+1} failed with {e}")
+                LOGGER.warning(f"Attempt {attempt+1} failed with {e}")
 
         raise RuntimeError(
             f"Inventory.this_system(): {res_json['total']} hosts returned "
