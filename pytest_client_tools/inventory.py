@@ -2,6 +2,9 @@
 # SPDX-License-Identifier: MIT
 
 from .restclient import RestClient
+import requests
+import logger
+from time import sleep
 
 
 class Inventory:
@@ -41,7 +44,7 @@ class Inventory:
         """
         return self._rest_client.delete(path, **kwargs)
 
-    def this_system(self):
+    def this_system(self, retries=3, delay=5):
         """
         Query Inventory for the current system.
 
@@ -49,6 +52,8 @@ class Inventory:
         `insights-client`. Raises `SystemNotRegisteredError` if the system
         is not registered.
 
+        :param retries: Number of times to retry the request
+        :param delay: Seconds to wait after GET request
         :return: The dict of the current system in Inventory
         :rtype: dict
         """
@@ -57,13 +62,20 @@ class Inventory:
                 "Inventory.this_system(): cannot invoke without insights_client"
             )
         path = f"hosts?insights_id={self._insights_client.uuid}"
-        res_json = self.get(path).json()
-        if res_json["total"] != 1:
-            raise RuntimeError(
-                f"Inventory.this_system(): {res_json['total']} hosts returned "
-                f"for the current UUID ({self._insights_client.uuid})"
-            )
-        return res_json["results"][0]
+
+        for attempt in range(retries):
+            try:
+                res_json = self.get(path).json()
+                sleep(delay)
+                if res_json["total"] == 1:
+                    return res_json["results"][0]
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"Attempt {attempt+1} failed with {e}")
+
+        raise RuntimeError(
+            f"Inventory.this_system(): {res_json['total']} hosts returned "
+            f"for the current UUID ({self._insights_client.uuid})"
+        )
 
     def this_system_profile(self):
         """
