@@ -11,16 +11,15 @@ jobs:
   stylish:
     name: "black & flake8"
     runs-on: ubuntu-latest
+    container:
+      image: "registry.fedoraproject.org/fedora:latest"
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: 3.11
-          cache: "pip"
-          cache-dependency-path: test-requirements.txt
+      - name: Install python3 and pip
+        run: |
+          dnf --setopt install_weak_deps=False install -y python3 python3-pip
 
       - name: Install test requirements
         run: pip install -r test-requirements.txt
