@@ -20,17 +20,19 @@ jobs:
           - "3.6"
           - "3.9"
           - "3.12"
-    runs-on: ${{ contains(fromJson('["3.6"]'), matrix.python-version) && 'ubuntu-20.04' || 'ubuntu-latest' }}
+        include:
+          - name: "Fedora Latest"
+            image: "registry.fedoraproject.org/fedora:latest"
+    runs-on: 'ubuntu-latest'
+    container:
+      image: ${{ matrix.image }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: "pip"
-          cache-dependency-path: test-requirements.txt
+      - name: Install python3 and pip
+        run: |
+          dnf --setopt install_weak_deps=False install -y python${{ matrix.python-version }} python3-pip
 
       - name: Install test requirements
         run: pip install -r test-requirements.txt
@@ -48,19 +50,21 @@ jobs:
           - "3.6"
           - "3.9"
           - "3.12"
-    runs-on: ${{ contains(fromJson('["3.6"]'), matrix.python-version) && 'ubuntu-20.04' || 'ubuntu-latest' }}
+        include:
+          - name: "Fedora Latest"
+            image: "registry.fedoraproject.org/fedora:latest"
+    runs-on: 'ubuntu-latest'
+    container:
+      image: ${{ matrix.image }}
 
     steps:
       - uses: actions/checkout@v4
         with:
           path: sources
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: "pip"
-          cache-dependency-path: sources/test-requirements.txt
+      - name: Install necessary tools in Fedora container
+        run: |
+          dnf --setopt install_weak_deps=False install -y python${{ matrix.python-version }} python3-pip
 
       - name: Install from sources via pip
         run: pip install sources
