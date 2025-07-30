@@ -12,6 +12,40 @@ from . import SystemNotRegisteredError
 from .util import SavedFile, Version, logged_run
 
 
+def _should_use_selinux_context():
+    """
+    Determine if SELinux context should be used based on RHEL version.
+
+    Returns True for RHEL 9.7+ and RHEL 10.1+, False otherwise.
+    """
+    try:
+        # Read RHEL version from /etc/redhat-release
+        with open("/etc/redhat-release", "r") as f:
+            release_content = f.read().strip()
+
+        # Parse version from release string
+        # Example: "Red Hat Enterprise Linux release 9.7 (Plow)"
+        # Example: "Red Hat Enterprise Linux release 10.1 (Plow)"
+        version_match = re.search(r"release\s+(\d+)\.(\d+)", release_content)
+        if not version_match:
+            return False
+
+        major = int(version_match.group(1))
+        minor = int(version_match.group(2))
+
+        # Check version requirements
+        if major == 9 and minor >= 7:
+            return True
+        elif major >= 10 and minor >= 1:
+            return True
+        else:
+            return False
+
+    except (FileNotFoundError, ValueError, OSError):
+        # If we can't determine the version, default to False for safety
+        return False
+
+
 INSIGHTS_CLIENT_FILES_TO_SAVE = (
     SavedFile(pathlib.Path("/etc/insights-client/insights-client.conf")),
     SavedFile(
@@ -277,7 +311,13 @@ class InsightsClient:
         with open("/etc/insights-client/machine-id", "r") as f:
             return uuid.UUID(f.read().strip())
 
-    def run(self, *args, check=True, text=True):
+    def run(
+        self,
+        *args,
+        check=True,
+        text=True,
+        selinux_context="auto",
+    ):
         """
         Run `insights-client` with the specified arguments.
 
@@ -293,35 +333,70 @@ class InsightsClient:
         :param text: Whether the stdin/stdout of the process are textual
             (and not bytes)
         :type text: bool
+        :param selinux_context: SELinux context to run insights-client with using runcon
+            Defaults to "auto" which uses "system_u:system_r:insights_client_t"
+            on RHEL 9.7+ and RHEL 10.1+ to simulate systemd daemon invocation, and None
+            on older versions. Set to None to run without runcon (for user-invoked
+            functionality tests). Set to a specific context string to override the
+            default behavior.
+        :type selinux_context: str or None
         :return: The result of the command execution
         :rtype: subprocess.CompletedProcess
         """
+        # Determine actual SELinux context to use
+        if selinux_context == "auto":
+            if _should_use_selinux_context():
+                actual_context = "system_u:system_r:insights_client_t"
+            else:
+                actual_context = None
+        else:
+            actual_context = selinux_context
+
+        if actual_context is not None:
+            cmd = ["runcon", actual_context, "insights-client"] + list(args)
+        else:
+            cmd = ["insights-client"] + list(args)
+
         return logged_run(
-            ["insights-client"] + list(args),
+            cmd,
             check=check,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=text,
         )
 
-    def register(self):
+    def register(self, selinux_context="auto"):
         """
         Register with `insights-client`.
 
         Invokes `insights-client --register`.
 
+        :param selinux_context: SELinux context to run insights-client with using runcon
+            Defaults to "auto" which uses "system_u:system_r:insights_client_t"
+            on RHEL 9.7+ and RHEL 10.1+ to simulate systemd daemon invocation, and None
+            on older versions. Set to None to run without runcon (for user-invoked
+            functionality tests). Set to a specific context string to override the
+            default behavior.
+        :type selinux_context: str or None
         :return: The result of the command execution
         :rtype: subprocess.CompletedProcess
         """
-        return self.run("--register")
+        return self.run("--register", selinux_context=selinux_context)
 
-    def unregister(self):
+    def unregister(self, selinux_context="auto"):
         """
         Unregister with `insights-client`.
 
         Invokes `insights-client --unregister`.
 
+        :param selinux_context: SELinux context to run insights-client with using runcon
+            Defaults to "auto" which uses "system_u:system_r:insights_client_t"
+            on RHEL 9.7+ and RHEL 10.1+ to simulate systemd daemon invocation, and None
+            on older versions. Set to None to run without runcon (for user-invoked
+            functionality tests). Set to a specific context string to override the
+            default behavior.
+        :type selinux_context: str or None
         :return: The result of the command execution
         :rtype: subprocess.CompletedProcess
         """
-        return self.run("--unregister")
+        return self.run("--unregister", selinux_context=selinux_context)
