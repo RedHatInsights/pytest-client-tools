@@ -13,7 +13,7 @@ jobs:
     container:
       image: "registry.fedoraproject.org/fedora:latest"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: REUSE Compliance Check
         uses: fsfe/reuse-action@v5
