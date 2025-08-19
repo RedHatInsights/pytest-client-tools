@@ -12,6 +12,7 @@ from .util import SavedFile, logged_run, Version, redact_arguments
 RHC_FILES_TO_SAVE = (
     SavedFile(pathlib.Path("/etc/rhc/config.toml")),
     SavedFile(pathlib.Path("/etc/rhc/workers/rhc-package-manager.toml")),
+    SavedFile(pathlib.Path("/etc/yggdrasil/config.toml")),
 )
 
 
