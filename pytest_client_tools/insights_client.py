@@ -244,7 +244,7 @@ class InsightsClient:
         :rtype: pytest_client_tools.util.Version
         """
         proc = self.run("--version")
-        m = re.search(r"^Core: (.+)-\d+$", proc.stdout, re.MULTILINE)
+        m = re.search(r"^Core: (.+)-(\d+|dev)$", proc.stdout, re.MULTILINE)
         assert m
         return Version(m.group(1))
 
