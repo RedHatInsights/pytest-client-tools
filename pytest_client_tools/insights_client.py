@@ -130,6 +130,7 @@ class InsightsClientConfig:
         "group",
         "logging_file",
         "loglevel",
+        "obfuscation_list",
         "password",
         "proxy",
         "redaction_file",
