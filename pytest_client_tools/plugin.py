@@ -234,19 +234,39 @@ def save_rhc_files(request):
 @pytest.fixture
 def rhc(save_rhc_files, test_config):
     rhc = Rhc()
-    config_file = pathlib.Path("/etc/rhc/config.toml")
-    try:
-        config = toml.loads(config_file.read_text())
-    except FileNotFoundError:
+    config_file = next(
+        (
+            p
+            for p in [
+                pathlib.Path("/etc/yggdrasil/config.toml"),
+                pathlib.Path("/etc/rhc/config.toml"),
+            ]
+            if p.exists()
+        ),
+        None,
+    )
+
+    if config_file is None:
+        LOGGER.warning("No config.toml found in /etc/yggdrasil or /etc/rhc")
         # file not found, start from an empty config
         config = {}
-    except toml.TomlDecodeError as e:
-        LOGGER.warning(
-            "cannot load %s as TOML (skipping customizations): %s", config_file, e
-        )
     else:
-        config["log-level"] = "trace"
-        config_file.write_text(toml.dumps(config))
+        try:
+            config = toml.loads(config_file.read_text())
+        except toml.TomlDecodeError as e:
+            LOGGER.warning(
+                "cannot load %s as TOML (skipping customizations): %s", config_file, e
+            )
+        else:
+            config["log-level"] = "trace"
+            with contextlib.suppress(KeyError):
+                rhc_server = test_config.get("rhc.server")
+                if rhc_server:
+                    if "yggdrasil" in str(config_file):
+                        config["server"] = [rhc_server]
+                    elif "rhc" in str(config_file):
+                        config["broker"] = [rhc_server]
+            config_file.write_text(toml.dumps(config))
     try:
         yield rhc
     finally:
