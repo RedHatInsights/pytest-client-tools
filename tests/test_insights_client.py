@@ -320,100 +320,27 @@ def test_insights_client_unregister_no_selinux_context(mock_logged_run, mock_con
     assert called_args == ["insights-client", "--unregister"]
 
 
-@patch("builtins.open", side_effect=FileNotFoundError)
-def test_should_use_selinux_context_no_release_file(mock_open):
-    """
-    Test that _should_use_selinux_context returns False when
-    /etc/redhat-release is missing
-    """
-    from pytest_client_tools.insights_client import _should_use_selinux_context
-
-    assert _should_use_selinux_context() is False
-
-
-@patch("builtins.open")
-def test_should_use_selinux_context_rhel_97(mock_open):
-    """Test that _should_use_selinux_context returns True for RHEL 9.7."""
-    mock_open.return_value.__enter__.return_value.read.return_value = (
-        "Red Hat Enterprise Linux release 9.7 (Plow)"
-    )
+@patch("subprocess.run")
+def test_should_use_selinux_context(mock_run):
+    """Test that _should_use_selinux_context returns True when """
+    """insights-core-selinux is installed"""
+    mock_run.return_value.returncode = 0
     from pytest_client_tools.insights_client import _should_use_selinux_context
 
     assert _should_use_selinux_context() is True
-
-
-@patch("builtins.open")
-def test_should_use_selinux_context_rhel_96(mock_open):
-    """Test that _should_use_selinux_context returns False for RHEL 9.6."""
-    mock_open.return_value.__enter__.return_value.read.return_value = (
-        "Red Hat Enterprise Linux release 9.6 (Plow)"
+    mock_run.assert_called_once_with(
+        ["rpm", "-q", "insights-core-selinux"], check=False
     )
+
+
+@patch("subprocess.run")
+def test_should_not_use_selinux_context(mock_run):
+    """Test that _should_use_selinux_context returns False when """
+    """insights-core-selinux is not installed"""
+    mock_run.return_value.returncode = 1
     from pytest_client_tools.insights_client import _should_use_selinux_context
 
     assert _should_use_selinux_context() is False
-
-
-@patch("builtins.open")
-def test_should_use_selinux_context_rhel_101(mock_open):
-    """Test that _should_use_selinux_context returns True for RHEL 10.1."""
-    mock_open.return_value.__enter__.return_value.read.return_value = (
-        "Red Hat Enterprise Linux release 10.1 (Plow)"
+    mock_run.assert_called_once_with(
+        ["rpm", "-q", "insights-core-selinux"], check=False
     )
-    from pytest_client_tools.insights_client import _should_use_selinux_context
-
-    assert _should_use_selinux_context() is True
-
-
-@patch("builtins.open")
-def test_should_use_selinux_context_rhel_100(mock_open):
-    """Test that _should_use_selinux_context returns False for RHEL 10.0."""
-    mock_open.return_value.__enter__.return_value.read.return_value = (
-        "Red Hat Enterprise Linux release 10.0 (Plow)"
-    )
-    from pytest_client_tools.insights_client import _should_use_selinux_context
-
-    assert _should_use_selinux_context() is False
-
-
-@patch("builtins.open")
-def test_should_use_selinux_context_invalid_format(mock_open):
-    """Test that _should_use_selinux_context returns False for invalid release format"""
-    mock_open.return_value.__enter__.return_value.read.return_value = (
-        "Some other Linux distribution"
-    )
-    from pytest_client_tools.insights_client import _should_use_selinux_context
-
-    assert _should_use_selinux_context() is False
-
-
-@patch("builtins.open")
-def test_should_use_selinux_context_fedora(mock_open):
-    """Test that _should_use_selinux_context returns False for Fedora."""
-    mock_open.return_value.__enter__.return_value.read.return_value = (
-        "Fedora release 41 (Forty One)"
-    )
-    from pytest_client_tools.insights_client import _should_use_selinux_context
-
-    assert _should_use_selinux_context() is False
-
-
-@patch("builtins.open")
-def test_should_use_selinux_context_centos_stream(mock_open):
-    """Test that _should_use_selinux_context returns False for CentOS Stream."""
-    mock_open.return_value.__enter__.return_value.read.return_value = (
-        "CentOS Stream release 9"
-    )
-    from pytest_client_tools.insights_client import _should_use_selinux_context
-
-    assert _should_use_selinux_context() is False
-
-
-@patch("builtins.open")
-def test_should_use_selinux_context_rocky_linux(mock_open):
-    """Test that _should_use_selinux_context returns False for Rocky Linux 9.3."""
-    mock_open.return_value.__enter__.return_value.read.return_value = (
-        "Rocky Linux release 9.3 (Blue Onyx)"
-    )
-    from pytest_client_tools.insights_client import _should_use_selinux_context
-
-    assert _should_use_selinux_context() is False

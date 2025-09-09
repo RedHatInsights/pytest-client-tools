@@ -14,36 +14,16 @@ from .util import SavedFile, Version, logged_run
 
 def _should_use_selinux_context():
     """
-    Determine if SELinux context should be used based on RHEL version.
+    Determine if SELinux context should be used.
 
-    Returns True for RHEL 9.7+ and RHEL 10.1+, False otherwise.
+    Returns True if packages required for SELinux confinement are installed,
+    False otherwise.
     """
-    try:
-        # Read RHEL version from /etc/redhat-release
-        with open("/etc/redhat-release", "r") as f:
-            release_content = f.read().strip()
-
-        # Parse version from release string
-        # Example: "Red Hat Enterprise Linux release 9.7 (Plow)"
-        # Example: "Red Hat Enterprise Linux release 10.1 (Plow)"
-        version_match = re.search(r"release\s+(\d+)\.(\d+)", release_content)
-        if not version_match:
-            return False
-
-        major = int(version_match.group(1))
-        minor = int(version_match.group(2))
-
-        # Check version requirements
-        if major == 9 and minor >= 7:
-            return True
-        elif major >= 10 and minor >= 1:
-            return True
-        else:
-            return False
-
-    except (FileNotFoundError, ValueError, OSError):
-        # If we can't determine the version, default to False for safety
-        return False
+    rpm_proc = subprocess.run(
+        ["rpm", "-q", "insights-core-selinux"],
+        check=False,
+    )
+    return rpm_proc.returncode == 0
 
 
 INSIGHTS_CLIENT_FILES_TO_SAVE = (
