@@ -12,20 +12,6 @@ from . import SystemNotRegisteredError
 from .util import SavedFile, Version, logged_run
 
 
-def _should_use_selinux_context():
-    """
-    Determine if SELinux context should be used.
-
-    Returns True if packages required for SELinux confinement are installed,
-    False otherwise.
-    """
-    rpm_proc = subprocess.run(
-        ["rpm", "-q", "insights-core-selinux"],
-        check=False,
-    )
-    return rpm_proc.returncode == 0
-
-
 INSIGHTS_CLIENT_FILES_TO_SAVE = (
     SavedFile(pathlib.Path("/etc/insights-client/insights-client.conf")),
     SavedFile(
@@ -297,7 +283,7 @@ class InsightsClient:
         *args,
         check=True,
         text=True,
-        selinux_context="auto",
+        selinux_context="system_u:system_r:insights_client_t",
     ):
         """
         Run `insights-client` with the specified arguments.
@@ -314,27 +300,13 @@ class InsightsClient:
         :param text: Whether the stdin/stdout of the process are textual
             (and not bytes)
         :type text: bool
-        :param selinux_context: SELinux context to run insights-client with using runcon
-            Defaults to "auto" which uses "system_u:system_r:insights_client_t"
-            on RHEL 9.7+ and RHEL 10.1+ to simulate systemd daemon invocation, and None
-            on older versions. Set to None to run without runcon (for user-invoked
-            functionality tests). Set to a specific context string to override the
-            default behavior.
+        :param selinux_context: SELinux context in which to run insights-client
         :type selinux_context: str or None
         :return: The result of the command execution
         :rtype: subprocess.CompletedProcess
         """
-        # Determine actual SELinux context to use
-        if selinux_context == "auto":
-            if _should_use_selinux_context():
-                actual_context = "system_u:system_r:insights_client_t"
-            else:
-                actual_context = None
-        else:
-            actual_context = selinux_context
-
-        if actual_context is not None:
-            cmd = ["runcon", actual_context, "insights-client"] + list(args)
+        if selinux_context is not None:
+            cmd = ["runcon", selinux_context, "insights-client"] + list(args)
         else:
             cmd = ["insights-client"] + list(args)
 
@@ -346,36 +318,28 @@ class InsightsClient:
             text=text,
         )
 
-    def register(self, selinux_context="auto"):
+    def register(self, selinux_context=None):
         """
         Register with `insights-client`.
 
         Invokes `insights-client --register`.
 
-        :param selinux_context: SELinux context to run insights-client with using runcon
-            Defaults to "auto" which uses "system_u:system_r:insights_client_t"
-            on RHEL 9.7+ and RHEL 10.1+ to simulate systemd daemon invocation, and None
-            on older versions. Set to None to run without runcon (for user-invoked
-            functionality tests). Set to a specific context string to override the
-            default behavior.
+        :param selinux_context: SELinux context in which to run insights-client,
+            for more details see `InsightsClient.run`
         :type selinux_context: str or None
         :return: The result of the command execution
         :rtype: subprocess.CompletedProcess
         """
         return self.run("--register", selinux_context=selinux_context)
 
-    def unregister(self, selinux_context="auto"):
+    def unregister(self, selinux_context=None):
         """
         Unregister with `insights-client`.
 
         Invokes `insights-client --unregister`.
 
-        :param selinux_context: SELinux context to run insights-client with using runcon
-            Defaults to "auto" which uses "system_u:system_r:insights_client_t"
-            on RHEL 9.7+ and RHEL 10.1+ to simulate systemd daemon invocation, and None
-            on older versions. Set to None to run without runcon (for user-invoked
-            functionality tests). Set to a specific context string to override the
-            default behavior.
+        :param selinux_context: SELinux context in which to run insights-client,
+            for more details see `InsightsClient.run`
         :type selinux_context: str or None
         :return: The result of the command execution
         :rtype: subprocess.CompletedProcess
