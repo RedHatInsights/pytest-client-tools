@@ -278,7 +278,13 @@ class InsightsClient:
         with open("/etc/insights-client/machine-id", "r") as f:
             return uuid.UUID(f.read().strip())
 
-    def run(self, *args, check=True, text=True):
+    def run(
+        self,
+        *args,
+        check=True,
+        text=True,
+        selinux_context="system_u:system_r:insights_client_t",
+    ):
         """
         Run `insights-client` with the specified arguments.
 
@@ -294,35 +300,48 @@ class InsightsClient:
         :param text: Whether the stdin/stdout of the process are textual
             (and not bytes)
         :type text: bool
+        :param selinux_context: SELinux context in which to run insights-client
+        :type selinux_context: str or None
         :return: The result of the command execution
         :rtype: subprocess.CompletedProcess
         """
+        if selinux_context is not None:
+            cmd = ["runcon", selinux_context, "insights-client"] + list(args)
+        else:
+            cmd = ["insights-client"] + list(args)
+
         return logged_run(
-            ["insights-client"] + list(args),
+            cmd,
             check=check,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=text,
         )
 
-    def register(self):
+    def register(self, selinux_context=None):
         """
         Register with `insights-client`.
 
         Invokes `insights-client --register`.
 
+        :param selinux_context: SELinux context in which to run insights-client,
+            for more details see `InsightsClient.run`
+        :type selinux_context: str or None
         :return: The result of the command execution
         :rtype: subprocess.CompletedProcess
         """
-        return self.run("--register")
+        return self.run("--register", selinux_context=selinux_context)
 
-    def unregister(self):
+    def unregister(self, selinux_context=None):
         """
         Unregister with `insights-client`.
 
         Invokes `insights-client --unregister`.
 
+        :param selinux_context: SELinux context in which to run insights-client,
+            for more details see `InsightsClient.run`
+        :type selinux_context: str or None
         :return: The result of the command execution
         :rtype: subprocess.CompletedProcess
         """
-        return self.run("--unregister")
+        return self.run("--unregister", selinux_context=selinux_context)
