@@ -283,7 +283,7 @@ class InsightsClient:
         *args,
         check=True,
         text=True,
-        selinux_context="system_u:system_r:insights_client_t",
+        selinux_context="system_u:system_r:insights_client_t:s0",
     ):
         """
         Run `insights-client` with the specified arguments.
