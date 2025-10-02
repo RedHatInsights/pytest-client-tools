@@ -224,7 +224,7 @@ class InsightsClient:
         :return: Whether `insights-client` is registered
         :rtype: bool
         """
-        proc = self.run("--status", check=False)
+        proc = self.run("--status", check=False, selinux_context=None)
         if proc.returncode in [0, 1] and any(
             i in proc.stdout for i in ["NOT", "unregistered", "401: Unauthorized"]
         ):
@@ -244,7 +244,7 @@ class InsightsClient:
         :return: The version of the insights-core in use.
         :rtype: pytest_client_tools.util.Version
         """
-        proc = self.run("--version")
+        proc = self.run("--version", selinux_context=None)
         m = re.search(r"^Core: (.+)-(\d+|dev)$", proc.stdout, re.MULTILINE)
         assert m
         return Version(m.group(1))
@@ -258,7 +258,7 @@ class InsightsClient:
         :return: The version of the insights-client in use.
         :rtype: pytest_client_tools.util.Version
         """
-        proc = self.run("--version")
+        proc = self.run("--version", selinux_context=None)
         m = re.search(r"^Client: (.+)$", proc.stdout, re.MULTILINE)
         assert m
         return Version(m.group(1))
