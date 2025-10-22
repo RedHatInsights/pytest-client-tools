@@ -89,6 +89,22 @@ def test_config(request):
 
 
 @pytest.fixture(scope="session")
+def is_bootc_system():
+    """Check if the system is a bootc system. Runs only once per test session."""
+    try:
+        bootc_status = subprocess.run(
+            ["bootc", "status"], capture_output=True, text=True
+        )
+        return (bootc_status.returncode == 0) and (
+            not bootc_status.stdout.strip().startswith(
+                "System is not deployed via bootc"
+            )
+        )
+    except FileNotFoundError:
+        return False
+
+
+@pytest.fixture(scope="session")
 def candlepin(request, tmp_path_factory):
     with contextlib.ExitStack() as stack:
         start_container = not request.config.getoption(
