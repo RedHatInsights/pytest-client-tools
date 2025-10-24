@@ -93,7 +93,9 @@ def is_bootc_system():
     """Check if the system is a bootc system. Runs only once per test session."""
     try:
         bootc_status = subprocess.run(
-            ["bootc", "status"], capture_output=True, text=True
+            ["bootc", "status", "--format", "humanreadable"],
+            capture_output=True,
+            text=True,
         )
         return (bootc_status.returncode == 0) and (
             not bootc_status.stdout.strip().startswith(
