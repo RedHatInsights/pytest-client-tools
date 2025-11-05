@@ -5,6 +5,7 @@ import configparser
 import contextlib
 import pathlib
 import re
+import shlex
 import subprocess
 import uuid
 
@@ -285,6 +286,9 @@ class InsightsClient:
         with a specified list of arguments, returning the result of the
         execution directly from `subprocess`.
 
+        When runcon is used, the output is redirected to /dev/tty to ensure
+        it's visible, while still being captured for test assertions.
+
         :param args: The actual arguments to run using `insights-client`
         :type args: list
         :param check: Whether raise an exception if the process exits with
@@ -296,12 +300,21 @@ class InsightsClient:
         :return: The result of the command execution
         :rtype: subprocess.CompletedProcess
         """
+        # Build the command string with redirection to /dev/tty
+        # This ensures output is visible when runcon is used
+        # Use tee to both write to /dev/tty and capture output
+        # This way we can see the output AND capture it for tests
+        cmd_args = ["insights-client"] + list(args)
+        # Properly escape arguments for shell execution
+        cmd_str = " ".join(shlex.quote(str(arg)) for arg in cmd_args)
+        shell_cmd = f"{cmd_str} 2>&1 | tee /dev/tty"
         return logged_run(
-            ["insights-client"] + list(args),
+            shell_cmd,
             check=check,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.STDOUT,  # Merge stderr into stdout since we use 2>&1
             text=text,
+            shell=True,
         )
 
     def register(self):
