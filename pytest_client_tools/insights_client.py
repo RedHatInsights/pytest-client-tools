@@ -9,7 +9,7 @@ import subprocess
 import uuid
 
 from . import SystemNotRegisteredError
-from .util import SavedFile, Version, logged_run
+from .util import SavedFile, Version, logged_run, loop_until
 
 
 INSIGHTS_CLIENT_FILES_TO_SAVE = (
@@ -318,7 +318,7 @@ class InsightsClient:
             text=text,
         )
 
-    def register(self, selinux_context=None):
+    def register(self, selinux_context=None, wait_for_registered=False):
         """
         Register with `insights-client`.
 
@@ -327,10 +327,24 @@ class InsightsClient:
         :param selinux_context: SELinux context in which to run insights-client,
             for more details see `InsightsClient.run`
         :type selinux_context: str or None
+        :param wait_for_registered: Loop and wait
+            until registration finishes if set to True
+        :type wait_for_registered: bool
         :return: The result of the command execution
         :rtype: subprocess.CompletedProcess
         """
-        return self.run("--register", selinux_context=selinux_context)
+        reg_proc = self.run("--register", selinux_context=selinux_context)
+        if wait_for_registered:
+
+            def check_registered():
+                status = self.run("--status", check=False, selinux_context=None)
+                return status.returncode == 0 and any(
+                    i in status.stdout
+                    for i in ["This host is registered", "Registered"]
+                )
+
+            assert loop_until(check_registered)
+        return reg_proc
 
     def unregister(self, selinux_context=None):
         """
