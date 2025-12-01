@@ -433,3 +433,55 @@ class InsightsClient:
             ),
             **kwargs,
         )
+
+    def _check_in_advisor(self):
+        """
+        Check if the system is in Advisor application or not.
+
+        Raises same exceptions as `_get_inventory_id` if there's some problem
+            with the inventory.
+
+        :return: True if this system is present in advisor
+        :rtype: bool
+        """
+        inventory_url = (
+            f"https://{self._get_services_api_host()}"
+            f"/api/insights/v1/system/{self._get_inventory_id()}"
+        )
+        try:
+            response = requests.get(
+                inventory_url,
+                cert=(
+                    "/etc/pki/consumer/cert.pem",
+                    "/etc/pki/consumer/key.pem",
+                ),
+                timeout=60,
+            )
+            response.raise_for_status()
+            return True
+        except requests.exceptions.RequestException:
+            return False
+
+    def wait_for_advisor(self, *args, **kwargs):
+        """
+        Wait for the system to be present in the Advisor application.
+
+        Raises same exceptions as `_check_in_advisor`
+
+        :param args: Additional positional arguments passed for `loop_until`
+            past the `predicate`
+        :param kwargs: Additional keyword arguments passed for `loop_until`
+            except `predicate` and `ignore_exceptions`
+        :return: True if this system is present in advisor
+        :rtype: bool
+        """
+        return loop_until(
+            self._check_in_advisor,
+            *args,
+            ignore_exceptions=(
+                SystemNotRegisteredError,
+                requests.exceptions.RequestException,
+                AssertionError,
+            ),
+            **kwargs,
+        )
