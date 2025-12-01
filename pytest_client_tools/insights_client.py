@@ -386,3 +386,26 @@ class InsightsClient:
 
     def wait_for_inventory(self, *args, **kwargs):
         return loop_until(lambda: self.inventory_id, *args, **kwargs)
+
+
+    def wait_for_advisor(self, *args, **kwargs):
+        try:
+            base_url = self.config.base_url
+        except (KeyError, AttributeError):
+            base_url = "cert-api.access.redhat.com:443/r/insights"
+        inventory_url = f"https://{base_url}/platform/insights/v1/system/{self.inventory_id}/"
+        def in_advisor():
+            try:
+                response = requests.get(
+                    inventory_url,
+                    cert=(
+                        "/etc/pki/consumer/cert.pem",
+                        "/etc/pki/consumer/key.pem",
+                    ),
+                    verify="/etc/rhsm/ca/redhat-uep.pem",
+                )
+                response.raise_for_status()
+                return True
+            except:
+                return False
+        return loop_until(in_advisor, *args, **kwargs)
