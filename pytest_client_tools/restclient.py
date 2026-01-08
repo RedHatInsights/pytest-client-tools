@@ -14,7 +14,7 @@ class RestClient:
     This class represents a client to perform REST calls.
     """
 
-    def __init__(self, base_url, verify=True, cert=None):
+    def __init__(self, base_url, verify=True, cert=None, proxies=None):
         self._base_url = base_url
         self._verify = verify
         self._session = requests.Session()
@@ -26,6 +26,9 @@ class RestClient:
         }
         if cert:
             self._request_kwargs["cert"] = cert
+
+        if proxies:
+            self._request_kwargs["proxies"] = proxies
 
     @property
     def base_url(self):
