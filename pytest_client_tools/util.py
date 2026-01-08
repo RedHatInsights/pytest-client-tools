@@ -222,7 +222,7 @@ def redact_arguments(args, redact_list):
     return new_args
 
 
-def loop_until(predicate, poll_sec=5, timeout_sec=120):
+def loop_until(predicate, poll_sec=5, timeout_sec=120, ignore_exceptions=()):
     """
     An helper function to handle a time periond waiting for an external service
     to update its state.
@@ -236,7 +236,15 @@ def loop_until(predicate, poll_sec=5, timeout_sec=120):
     """
     start = time.time()
     ok = False
+    exception = None
     while (not ok) and (time.time() - start < timeout_sec):
         time.sleep(poll_sec)
-        ok = predicate()
+        exception = None
+        try:
+            ok = predicate()
+        except ignore_exceptions as exc:
+            exception = exc
+            ok = False
+    if exception is not None:
+        raise exception
     return ok
