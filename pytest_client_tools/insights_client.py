@@ -5,6 +5,7 @@ import configparser
 import contextlib
 import pathlib
 import re
+import requests
 import subprocess
 import uuid
 
@@ -359,3 +360,128 @@ class InsightsClient:
         :rtype: subprocess.CompletedProcess
         """
         return self.run("--unregister", selinux_context=selinux_context)
+
+    def _get_services_api_host(self):
+        """
+        Return hostname to be used for direct insights API calls
+
+        This function should be used only when obtaining information that is
+        not obtainable through the `insight-client` and direct API calls
+        need to be done instead.
+
+        This method currently does not properly support satellite related setups.
+
+        :return: Hostname for insights API calls
+        :rtype: str
+        """
+        try:
+            return (
+                "cert.cloud.stage.redhat.com"
+                if ".stage." in self.config.base_url
+                else "cert.cloud.redhat.com"
+            )
+        except (KeyError, AttributeError):
+            return "cert.cloud.redhat.com"
+
+    def _get_inventory_id(self):
+        """
+        Return the inventory ID of the system.
+
+        Raises `SystemNotRegisteredError` if the system is not registered.
+        Raises `requests.exceptions.RequestException` If there's some issue
+            with the inventory service.
+        Raises 'AssertionError' if the system is not present in the inventory or
+            if there are multiple inventory entries assigned to this system.
+
+        :return: The inventory ID of the system
+        :rtype: str
+        """
+        inventory_url = (
+            f"https://{self._get_services_api_host()}"
+            f"/api/inventory/v1/hosts?insights_id={self.uuid}"
+        )
+        response = requests.get(
+            inventory_url,
+            cert=(
+                "/etc/pki/consumer/cert.pem",
+                "/etc/pki/consumer/key.pem",
+            ),
+        )
+        response.raise_for_status()
+        assert response.json()["total"] == 1
+        return response.json()["results"][0]["id"]
+
+    def wait_for_inventory(self, *args, **kwargs):
+        """
+        Wait for the system to have ID assigned in the inventory.
+
+        Raises same exceptions as `_get_inventory_id`
+
+        :param args: Additional positional arguments passed for `loop_until`
+            past the `predicate`
+        :param kwargs: Additional keyword arguments passed for `loop_until`
+            except `predicate` and `ignore_exceptions`
+        :return: The inventory ID of the system
+        :rtype: str
+        """
+        return loop_until(
+            self._get_inventory_id,
+            *args,
+            ignore_exceptions=(
+                SystemNotRegisteredError,
+                requests.exceptions.RequestException,
+                AssertionError,
+            ),
+            **kwargs,
+        )
+
+    def _check_in_advisor(self):
+        """
+        Check if the system is in Advisor application or not.
+
+        Raises same exceptions as `_get_inventory_id` if there's some problem
+            with the inventory.
+
+        :return: True if this system is present in advisor
+        :rtype: bool
+        """
+        inventory_url = (
+            f"https://{self._get_services_api_host()}"
+            f"/api/insights/v1/system/{self._get_inventory_id()}"
+        )
+        try:
+            response = requests.get(
+                inventory_url,
+                cert=(
+                    "/etc/pki/consumer/cert.pem",
+                    "/etc/pki/consumer/key.pem",
+                ),
+            )
+            response.raise_for_status()
+            return True
+        except requests.exceptions.RequestException:
+            return False
+
+    def wait_for_advisor(self, *args, **kwargs):
+        """
+        Wait for the system to be present in the Advisor application.
+
+        Raises same exceptions as `_check_in_advisor`
+
+        :param args: Additional positional arguments passed for `loop_until`
+            past the `predicate`
+        :param kwargs: Additional keyword arguments passed for `loop_until`
+            except `predicate` and `ignore_exceptions`
+        :return: True if this system is present in advisor
+        :rtype: bool
+        """
+        return loop_until(
+            self._check_in_advisor,
+            *args,
+            ignore_exceptions=(
+                SystemNotRegisteredError,
+                requests.exceptions.RequestException,
+                AssertionError,
+            ),
+            **kwargs,
+        )
