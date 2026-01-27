@@ -3,6 +3,7 @@
 
 import configparser
 import contextlib
+import os
 import pathlib
 import re
 import requests
@@ -381,7 +382,12 @@ class InsightsClient:
                 else "cert.cloud.redhat.com"
             )
         except (KeyError, AttributeError):
-            return "cert.cloud.redhat.com"
+            env_for_dynaconf = os.environ.get("ENV_FOR_DYNACONF", "")
+            return (
+                "cert.cloud.stage.redhat.com"
+                if env_for_dynaconf.startswith("satellite")
+                else "cert.cloud.redhat.com"
+            )
 
     def _get_inventory_id(self):
         """
