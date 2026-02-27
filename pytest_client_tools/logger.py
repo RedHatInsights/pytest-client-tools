@@ -3,4 +3,4 @@
 
 import logging
 
-LOGGER = logging.getLogger("pytest_client_tools")
+LOGGER = (x := logging.getLogger("pytest_client_tools"))
