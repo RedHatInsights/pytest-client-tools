@@ -412,6 +412,7 @@ class InsightsClient:
                 "/etc/pki/consumer/key.pem",
             ),
             timeout=60,
+            proxies={"https": "http://squid.corp.redhat.com:3128/"},
         )
         response.raise_for_status()
         return response.json()["id"]
@@ -462,6 +463,7 @@ class InsightsClient:
                     "/etc/pki/consumer/key.pem",
                 ),
                 timeout=60,
+                proxies={"https": "http://squid.corp.redhat.com:3128/"},
             )
             response.raise_for_status()
             return True
