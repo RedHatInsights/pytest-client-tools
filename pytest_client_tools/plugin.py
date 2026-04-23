@@ -276,7 +276,7 @@ def rhc(save_rhc_files, test_config):
                 "cannot load %s as TOML (skipping customizations): %s", config_file, e
             )
         else:
-            config["log-level"] = "trace"
+            config["log-level"] = "debug"
             with contextlib.suppress(KeyError):
                 rhc_server = test_config.get("rhc.server")
                 if rhc_server:
