@@ -380,16 +380,53 @@ def pytest_runtestloop(session):
 
 def pytest_runtest_protocol(item, nextitem):
     node_running_data = NodeRunningData(item)
+    node_running_data.timestamp = datetime.datetime.now()
     pytest._client_tools.running_data[item.nodeid] = node_running_data
     LOGGER.handlers.remove(pytest._client_tools.global_running_data.handler)
     logging.getLogger().addHandler(node_running_data.handler)
-    if pytest._client_tools.log_selinux_audits:
-        node_running_data.timestamp = datetime.datetime.now()
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    report = outcome.get_result()
+    if report.when != "call" or not report.failed:
+        return
+    node_running_data = pytest._client_tools.running_data.get(item.nodeid)
+    if node_running_data is not None:
+        node_running_data.failed = True
+
+
+def _archive_yggdrasil_journal(artifacts_collector, since=None):
+    command = ["journalctl", "--no-pager", "-u", "yggdrasil.service"]
+    if since is not None:
+        command.extend(["--since", since.strftime("%Y-%m-%d %H:%M:%S")])
+    else:
+        command.extend(["-n", "250"])
+    proc = logged_run(
+        command,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    output = proc.stdout or ""
+    if proc.stderr:
+        if output:
+            output += "\n"
+        output += proc.stderr
+    artifacts_collector.write_text("yggdrasil-journal.log", output)
 
 
 def pytest_runtest_logfinish(nodeid, location):
     node_running_data = pytest._client_tools.running_data.pop(nodeid)
     node_running_data.archive_test_log()
+    if node_running_data.failed:
+        LOGGER.info("collecting yggdrasil journal because the test failed")
+        _archive_yggdrasil_journal(
+            node_running_data.artifacts,
+            since=node_running_data.timestamp,
+        )
     if pytest._client_tools.log_selinux_audits:
         time.sleep(1)
         marker = f"pytest-client-tools-{uuid.uuid4()}"
