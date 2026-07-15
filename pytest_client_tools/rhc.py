@@ -13,6 +13,7 @@ RHC_FILES_TO_SAVE = (
     SavedFile(pathlib.Path("/etc/rhc/config.toml")),
     SavedFile(pathlib.Path("/etc/rhc/workers/rhc-package-manager.toml")),
     SavedFile(pathlib.Path("/etc/yggdrasil/config.toml")),
+    SavedFile(pathlib.Path("/var/log/rhc/rhc.log")),
 )
 
 
