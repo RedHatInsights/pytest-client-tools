@@ -104,6 +104,7 @@ class ArtifactsCollector:
         shutil.copy2(src, self._path)
 
     def write_text(self, fn, data):
+        self._path.mkdir(parents=True, exist_ok=True)
         (self._path / fn).write_text(data)
 
 
@@ -124,6 +125,7 @@ class NodeRunningData:
             )
         )
         self.timestamp = None
+        self.failed = False
 
     def archive_test_log(self):
         self.handler.close()
