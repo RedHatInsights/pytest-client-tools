@@ -362,7 +362,7 @@ class InsightsClient:
         """
         return self.run("--unregister", selinux_context=selinux_context)
 
-    def _get_services_api_host(self):
+    def get_services_api_host(self):
         """
         Return hostname to be used for direct insights API calls
 
@@ -388,6 +388,10 @@ class InsightsClient:
                 if env_for_dynaconf.startswith("satellite")
                 else "cert.cloud.redhat.com"
             )
+
+    def _get_services_api_host(self):
+        """Backward-compatible alias for :meth:`get_services_api_host`."""
+        return self.get_services_api_host()
 
     def _get_inventory_id(self):
         """
