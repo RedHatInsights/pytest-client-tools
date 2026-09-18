@@ -22,13 +22,13 @@ jobs:
           - "3.12"
         include:
           - name: "Fedora Latest"
-            image: "registry.fedoraproject.org/fedora:latest"
+            image: "registry.fedoraproject.org/fedora:43"
     runs-on: 'ubuntu-latest'
     container:
       image: ${{ matrix.image }}
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install python3 and pip
         run: |
@@ -57,13 +57,13 @@ jobs:
           - "3.12"
         include:
           - name: "Fedora Latest"
-            image: "registry.fedoraproject.org/fedora:latest"
+            image: "registry.fedoraproject.org/fedora:43"
     runs-on: 'ubuntu-latest'
     container:
       image: ${{ matrix.image }}
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: sources
 

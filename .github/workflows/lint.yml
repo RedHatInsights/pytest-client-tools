@@ -7,15 +7,20 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   stylish:
     name: "black & flake8"
     runs-on: ubuntu-latest
     container:
-      image: "registry.fedoraproject.org/fedora:latest"
+      image: "registry.fedoraproject.org/fedora:43"
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install python3 and pip
         run: |
@@ -24,12 +29,12 @@ jobs:
       - name: Install test requirements
         run: pip install -r test-requirements.txt
 
-      - uses: psf/black@stable
+      - uses: psf/black@552baf822992936134cbd31a38f69c8cfe7c0f05 # 24.3.0
         with:
           version: "24.3.0"
 
       - name: Setup flake8 annotations
-        uses: rbialon/flake8-annotations@v1
+        uses: rbialon/flake8-annotations@48819b39d57c621b5a64a1cdce40a5caa6a43b89 # v1
 
       - name: Run flake8
         run: |
