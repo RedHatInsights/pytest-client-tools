@@ -28,12 +28,10 @@ jobs:
       - name: Install test requirements
         run: pip install -r test-requirements.txt
 
-      - uses: psf/black@87928e6d6761a4a6d22250e1fee5601b3998086e # 26.5.1
-        with:
-          version: "24.3.0"
-
-      - name: Setup flake8 annotations
-        uses: rbialon/flake8-annotations@48819b39d57c621b5a64a1cdce40a5caa6a43b89 # v1
+      - name: Run Black
+        run: |
+          python3 -m pip install black==24.3.0
+          black --check .
 
       - name: Run flake8
         run: |
