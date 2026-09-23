@@ -9,7 +9,6 @@ import uuid
 from . import SystemNotRegisteredError
 from .util import SavedFile, logged_run, redact_arguments
 
-
 SUBMAN_FILES_TO_SAVE = (
     SavedFile(pathlib.Path("/etc/rhsm/rhsm.conf")),
     SavedFile(pathlib.Path("/var/log/rhsm/rhsm.log"), remove_at_start=True),

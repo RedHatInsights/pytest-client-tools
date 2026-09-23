@@ -30,7 +30,7 @@ jobs:
 
       - name: Run Black
         run: |
-          python3 -m pip install black==24.3.0
+          python3 -m pip install black==26.5.1
           black --check .
 
       - name: Run flake8
