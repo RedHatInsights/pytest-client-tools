@@ -2,13 +2,12 @@
 # SPDX-License-Identifier: MIT
 
 name: lint
+permissions:
+  contents: read
 
 on:
   pull_request:
   workflow_dispatch:
-
-permissions:
-  contents: read
 
 jobs:
   stylish:
