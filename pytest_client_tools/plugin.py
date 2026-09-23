@@ -29,7 +29,6 @@ from .rhc import Rhc, RHC_FILES_TO_SAVE
 from .test_config import TestConfig
 from .util import ClientToolsPluginData, NodeRunningData, logged_run
 
-
 _MARKERS = {
     "candlepin": "tests requiring a self-deployed Candlepin",
     "external_candlepin": "tests requiring an externally deployed Candlepin",

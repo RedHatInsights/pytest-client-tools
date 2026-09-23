@@ -13,7 +13,6 @@ import uuid
 from . import SystemNotRegisteredError
 from .util import SavedFile, Version, logged_run, loop_until
 
-
 INSIGHTS_CLIENT_FILES_TO_SAVE = (
     SavedFile(pathlib.Path("/etc/insights-client/insights-client.conf")),
     SavedFile(
