@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: MIT
 
 name: security
+permissions:
+  contents: read
 
 on:
   pull_request:
@@ -9,9 +11,6 @@ on:
   push:
     branches:
       - main
-
-permissions:
-  contents: read
 
 env:
   GITLEAKS_VERSION: "8.30.1"
