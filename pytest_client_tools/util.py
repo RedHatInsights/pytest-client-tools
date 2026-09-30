@@ -174,7 +174,22 @@ def should_log_selinux_denials():
             " variable PYTEST_CLIENT_TOOLS_DISABLE_SELINUX is set"
         )
         return False
-    for tool in ["ausearch", "auditctl"]:
+    getenforce = shutil.which("getenforce")
+    if getenforce:
+        proc_getenforce = logged_run(
+            [getenforce],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        selinux_mode = proc_getenforce.stdout.strip()
+        if proc_getenforce.returncode != 0 or selinux_mode == "Disabled":
+            LOGGER.info(
+                "disabling SELinux denials collection because SELinux is disabled "
+                f"(getenforce output: {selinux_mode or proc_getenforce.stderr.strip()})"
+            )
+            return False
+    for tool in ["ausearch", "aureport", "auditctl"]:
         if not require_tool(tool):
             return False
     proc_systemctl = logged_run(
