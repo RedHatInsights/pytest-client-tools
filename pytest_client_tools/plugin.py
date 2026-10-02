@@ -20,6 +20,7 @@ from .inventory import Inventory
 from .insights_client import InsightsClient, INSIGHTS_CLIENT_FILES_TO_SAVE
 from .logger import LOGGER
 from .podman import Podman
+from .selinux import SELinuxAVCChecker, add_known_avcs_to_skiplist
 from .subscription_manager import (
     SubscriptionManager,
     SUBMAN_FILES_TO_SAVE,
@@ -385,10 +386,75 @@ def pytest_runtest_protocol(item, nextitem):
     logging.getLogger().addHandler(node_running_data.handler)
 
 
+def _flush_audit_events():
+    time.sleep(1)
+    marker = f"pytest-client-tools-{uuid.uuid4()}"
+    logged_run(
+        ["auditctl", "-m", marker],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    for _ in range(1, 100):
+        proc = logged_run(
+            f"ausearch -i -m user | grep -q {marker}",
+            check=False,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=True,
+            text=True,
+        )
+        if proc.returncode == 0:
+            return
+        time.sleep(0.1)
+
+
+@pytest.fixture
+def client_tools_avc_skips():
+    """Empty default; consuming projects provide their own exceptions here."""
+    return []
+
+
+@pytest.fixture(autouse=True)
+def check_avcs(request, client_tools_avc_skips):
+    """Collect AVCs for each test and fail when any are not on the shared skip list."""
+    checker = SELinuxAVCChecker()
+    running_data = pytest._client_tools.running_data[request.node.nodeid]
+    checker.start_time = running_data.timestamp
+    add_known_avcs_to_skiplist(checker, client_tools_avc_skips)
+    yield checker
+
+    if not pytest._client_tools.log_selinux_audits:
+        return
+
+    try:
+        _flush_audit_events()
+        checker.end_time = datetime.datetime.now()
+        avcs = list(checker.get_avcs(skiplisted=False))
+    except Exception as ex:
+        pytest.fail(f"AVC check could not run: {ex}")
+    if avcs:
+        running_data.artifacts.write_text("selinux.log", checker.last_report)
+
+    unexpected = [avc for avc in avcs if not checker.is_skiplisted(avc)]
+    if unexpected:
+        pytest.fail(
+            "Unexpected SELinux AVCs detected during test run!\n"
+            + "\n".join(str(denial) for denial in unexpected)
+        )
+
+
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(item, call):
     outcome = yield
     report = outcome.get_result()
+    if call.when != "call" and call.excinfo:
+        for entry in call.excinfo.traceback:
+            if getattr(entry, "name", "").startswith("check_"):
+                report.when = "call"
+                break
     if report.when != "call" or not report.failed:
         return
     node_running_data = pytest._client_tools.running_data.get(item.nodeid)
@@ -426,48 +492,6 @@ def pytest_runtest_logfinish(nodeid, location):
             node_running_data.artifacts,
             since=node_running_data.timestamp,
         )
-    if pytest._client_tools.log_selinux_audits:
-        time.sleep(1)
-        marker = f"pytest-client-tools-{uuid.uuid4()}"
-        logged_run(
-            ["auditctl", "-m", marker],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        for _ in range(1, 100):
-            proc = logged_run(
-                f"ausearch -i -m user | grep -q {marker}",
-                check=False,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                shell=True,
-                text=True,
-            )
-            if proc.returncode == 0:
-                break
-            time.sleep(0.1)
-        proc_ausearch = logged_run(
-            [
-                "ausearch",
-                "-i",
-                "-m",
-                "avc",
-                "-ts",
-                node_running_data.timestamp.strftime("%x"),
-                node_running_data.timestamp.strftime("%T"),
-            ],
-            check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        if proc_ausearch.returncode not in [0, 1]:
-            proc_ausearch.check_returncode()
-        if proc_ausearch.stdout:
-            node_running_data.artifacts.write_text("selinux.log", proc_ausearch.stdout)
     logging.getLogger().handlers.remove(node_running_data.handler)
     LOGGER.addHandler(pytest._client_tools.global_running_data.handler)
 

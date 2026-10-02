@@ -29,6 +29,15 @@ and some helper bits:
 - `insights_client` -- `insights-client`
 - `rhc` -- `rhc`
 
+It also provides an autouse `check_avcs` fixture. When auditd and the required
+audit tools are available, it checks each test's AVC window, saves one
+`selinux.log` artifact when AVCs are present, and fails for unexpected denials.
+AVC collection is disabled automatically when SELinux is disabled. Known exceptions are
+maintained by consuming projects through the `client_tools_avc_skips` fixture.
+Each fixture value is a list of `{"fields": {...}}` or `{"regex": ...}`
+rules; without an override, no known AVCs are skipped. The plugin validates and
+applies the rules supplied by the consuming project.
+
 ## License
 
 Distributed under the terms of the `MIT`_ license.
