@@ -8,6 +8,7 @@ import pathlib
 import re
 import requests
 import subprocess
+from urllib.parse import urlsplit
 import uuid
 
 from . import SystemNotRegisteredError
@@ -214,8 +215,9 @@ class InsightsClient:
     `/etc/insights-client/insights-client.conf`.
     """
 
-    def __init__(self):
+    def __init__(self, services_api_base_url=None):
         self.config = InsightsClientConfig()
+        self._services_api_base_url = services_api_base_url
 
     @property
     def is_registered(self):
@@ -361,32 +363,93 @@ class InsightsClient:
         """
         return self.run("--unregister", selinux_context=selinux_context)
 
-    def get_services_api_host(self):
+    @staticmethod
+    def _is_satellite_environment():
+        """Return whether ENV_FOR_DYNACONF is a supported Satellite profile.
+
+        Supported profile names are ``satelliteNNN`` and ``satellite-capsule``.
+        Matching is case-insensitive.
         """
-        Return hostname to be used for direct insights API calls
+        return (
+            re.fullmatch(
+                r"satellite(?:\d+|-capsule)",
+                os.environ.get("ENV_FOR_DYNACONF", ""),
+                re.IGNORECASE,
+            )
+            is not None
+        )
 
-        This function should be used only when obtaining information that is
-        not obtainable through the `insight-client` and direct API calls
-        need to be done instead.
+    def _get_satellite_services_api_base_url(self):
+        """Return the full base URL for Satellite Inventory and Advisor requests.
 
-        This method currently does not properly support satellite related setups.
+        Uses the base URL supplied by the test configuration, falling back to
+        ``insights-client.conf`` when no test URL was supplied.
 
-        :return: Hostname for insights API calls
+        :raises RuntimeError: If no Satellite API base URL is configured.
+        :return: The normalized base URL, including any proxy path prefix.
         :rtype: str
         """
+
+        base_url = self._services_api_base_url
+        if not base_url:
+            try:
+                base_url = self.config.base_url
+            except (KeyError, AttributeError):
+                raise RuntimeError(
+                    "Satellite API base URL is missing; configure insights.base_url"
+                )
+
+        base_url = base_url.rstrip("/")
+        if urlsplit(base_url).scheme.lower() not in {"http", "https"}:
+            base_url = f"https://{base_url.lstrip('/')}"
+        return base_url
+
+    def get_services_api_base_url(self):
+        """Return the base URL used to build direct Inventory and Advisor requests.
+
+        Satellite profiles use their configured base URL, including its proxy path
+        prefix. Other profiles use the stage or production services host with the
+        ``/api`` prefix.
+
+        :return: The services API base URL.
+        :rtype: str
+        """
+
+        if self._is_satellite_environment():
+            return self._get_satellite_services_api_base_url()
+        return f"https://{self.get_services_api_host()}/api"
+
+    def get_services_api_host(self):
+        """Return the hostname for direct Insights API calls.
+
+        Satellite profiles use the host and port from their configured API base
+        URL. Other profiles use the stage host when the client base URL contains
+        ``.stage.``, and the production host otherwise.
+
+        :return: The API host, including a configured port when present.
+        :rtype: str
+        """
+
+        if self._is_satellite_environment():
+            base_url = self._get_satellite_services_api_base_url()
+            parsed_url = urlsplit(base_url)
+            if not parsed_url.hostname:
+                raise ValueError(
+                    f"Satellite API host cannot be selected from "
+                    f"insights.base_url: {base_url!r}"
+                )
+            return parsed_url.netloc
+
         try:
-            return (
-                "cert.cloud.stage.redhat.com"
-                if ".stage." in self.config.base_url
-                else "cert.cloud.redhat.com"
-            )
+            base_url = self.config.base_url
         except (KeyError, AttributeError):
-            env_for_dynaconf = os.environ.get("ENV_FOR_DYNACONF", "")
-            return (
-                "cert.cloud.stage.redhat.com"
-                if env_for_dynaconf.startswith("satellite")
-                else "cert.cloud.redhat.com"
-            )
+            return "cert.cloud.redhat.com"
+
+        return (
+            "cert.cloud.stage.redhat.com"
+            if ".stage." in base_url
+            else "cert.cloud.redhat.com"
+        )
 
     def _get_services_api_host(self):
         """Backward-compatible alias for :meth:`get_services_api_host`."""
@@ -405,8 +468,8 @@ class InsightsClient:
         :rtype: str
         """
         inventory_url = (
-            f"https://{self._get_services_api_host()}"
-            f"/api/inventory/v1/host_exists?insights_id={self.uuid}"
+            f"{self.get_services_api_base_url()}"
+            f"/inventory/v1/host_exists?insights_id={self.uuid}"
         )
         response = requests.get(
             inventory_url,
@@ -454,13 +517,13 @@ class InsightsClient:
         :return: True if this system is present in advisor
         :rtype: bool
         """
-        inventory_url = (
-            f"https://{self._get_services_api_host()}"
-            f"/api/insights/v1/system/{self._get_inventory_id()}"
+        advisor_url = (
+            f"{self.get_services_api_base_url()}"
+            f"/insights/v1/system/{self._get_inventory_id()}"
         )
         try:
             response = requests.get(
-                inventory_url,
+                advisor_url,
                 cert=(
                     "/etc/pki/consumer/cert.pem",
                     "/etc/pki/consumer/key.pem",
