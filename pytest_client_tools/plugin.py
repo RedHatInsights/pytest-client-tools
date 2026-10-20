@@ -222,7 +222,9 @@ def save_insights_client_files(request):
 
 @pytest.fixture
 def insights_client(save_insights_client_files, test_config):
-    insights_client = InsightsClient()
+    insights_client = InsightsClient(
+        services_api_base_url=test_config.get("insights", "base_url")
+    )
     save_config = False
     with contextlib.suppress(KeyError):
         legacy_upload = test_config.get("insights.legacy_upload")
