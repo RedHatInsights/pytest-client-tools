@@ -220,10 +220,23 @@ def save_insights_client_files(request):
     yield
 
 
+def _insights_services_api_verify(test_config):
+    """Resolve TLS verify for Inventory/Advisor calls from Dynaconf.
+
+    Matches :func:`external_inventory`: prefer ``insights.ca_path``, otherwise
+    derive a bool from ``insights.insecure``.
+    """
+    verify = test_config.get("insights", "ca_path")
+    if not verify:
+        verify = not test_config.get("insights", "insecure")
+    return verify
+
+
 @pytest.fixture
 def insights_client(save_insights_client_files, test_config):
     insights_client = InsightsClient(
-        services_api_base_url=test_config.get("insights", "base_url")
+        services_api_base_url=test_config.get("insights", "base_url"),
+        services_api_verify=_insights_services_api_verify(test_config),
     )
     save_config = False
     with contextlib.suppress(KeyError):
@@ -299,16 +312,9 @@ def external_inventory(request, test_config):
     external_candlepin = request.getfixturevalue("external_candlepin")
     if not external_candlepin:
         pytest.skip("missing 'external_candlepin' fixture")
-    # get the CA path: if it is non-empty, then it means that
-    # the specified path enforces the SSL validation
-    verify = test_config.get("insights", "ca_path")
-    if not verify:
-        # empty/unset CA path: get whether verify the SSL connection
-        # using the system CA store
-        verify = not test_config.get("insights", "insecure")
     inventory = Inventory(
         base_url=test_config.get("insights", "base_url") + "/inventory/v1",
-        verify=verify,
+        verify=_insights_services_api_verify(test_config),
     )
     yield inventory
 

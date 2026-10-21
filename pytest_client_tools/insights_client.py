@@ -215,9 +215,10 @@ class InsightsClient:
     `/etc/insights-client/insights-client.conf`.
     """
 
-    def __init__(self, services_api_base_url=None):
+    def __init__(self, services_api_base_url=None, services_api_verify=None):
         self.config = InsightsClientConfig()
         self._services_api_base_url = services_api_base_url
+        self._services_api_verify = services_api_verify
 
     @property
     def is_registered(self):
@@ -455,6 +456,26 @@ class InsightsClient:
         """Backward-compatible alias for :meth:`get_services_api_host`."""
         return self.get_services_api_host()
 
+    def get_services_api_verify(self):
+        """Return the TLS verify setting for Inventory and Advisor requests.
+
+        Preference order:
+
+        1. ``services_api_verify`` passed to the constructor (typically from
+           Dynaconf ``insights.ca_path`` / ``insights.insecure``)
+        2. ``cert_verify`` from ``insights-client.conf`` when set
+        3. ``True`` (system CA store)
+
+        :return: Passed to ``requests`` as ``verify`` — a bool or CA bundle path.
+        :rtype: bool or str
+        """
+        if self._services_api_verify is not None:
+            return self._services_api_verify
+        try:
+            return self.config.cert_verify
+        except KeyError:
+            return True
+
     def _get_inventory_id(self):
         """
         Return the inventory ID of the system.
@@ -478,6 +499,7 @@ class InsightsClient:
                 "/etc/pki/consumer/key.pem",
             ),
             timeout=60,
+            verify=self.get_services_api_verify(),
             proxies={"https": "http://squid.corp.redhat.com:3128/"},
         )
         response.raise_for_status()
@@ -529,6 +551,7 @@ class InsightsClient:
                     "/etc/pki/consumer/key.pem",
                 ),
                 timeout=60,
+                verify=self.get_services_api_verify(),
                 proxies={"https": "http://squid.corp.redhat.com:3128/"},
             )
             response.raise_for_status()

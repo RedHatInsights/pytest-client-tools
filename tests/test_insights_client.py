@@ -4,7 +4,18 @@
 
 import pytest
 
-from pytest_client_tools.insights_client import InsightsClientConfig
+from pytest_client_tools import insights_client as insights_client_mod
+from pytest_client_tools.insights_client import InsightsClient, InsightsClientConfig
+
+
+def _patch_insights_client_config(monkeypatch, conf_file):
+    monkeypatch.setattr(
+        insights_client_mod,
+        "InsightsClientConfig",
+        lambda path="/etc/insights-client/insights-client.conf": InsightsClientConfig(
+            str(conf_file)
+        ),
+    )
 
 
 def test_config_not_existing(tmp_path):
@@ -130,3 +141,27 @@ def test_config_cert_verify_write(key_value, tmp_path):
     conf.save()
     conf_file_text = conf_file.read_text()
     assert f"cert_verify={key_value}" in conf_file_text
+
+
+def test_get_services_api_verify_prefers_constructor(tmp_path, monkeypatch):
+    conf_file = tmp_path / "file.conf"
+    conf_file.write_text("[insights-client]\ncert_verify=True\n")
+    _patch_insights_client_config(monkeypatch, conf_file)
+    client = InsightsClient(services_api_verify="/etc/rhsm/ca/katello-server-ca.pem")
+    assert client.get_services_api_verify() == "/etc/rhsm/ca/katello-server-ca.pem"
+
+
+def test_get_services_api_verify_falls_back_to_config(tmp_path, monkeypatch):
+    conf_file = tmp_path / "file.conf"
+    conf_file.write_text("[insights-client]\ncert_verify=/from-config.pem\n")
+    _patch_insights_client_config(monkeypatch, conf_file)
+    client = InsightsClient()
+    assert client.get_services_api_verify() == "/from-config.pem"
+
+
+def test_get_services_api_verify_defaults_true(tmp_path, monkeypatch):
+    conf_file = tmp_path / "file.conf"
+    conf_file.write_text("[insights-client]\n")
+    _patch_insights_client_config(monkeypatch, conf_file)
+    client = InsightsClient()
+    assert client.get_services_api_verify() is True
