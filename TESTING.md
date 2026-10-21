@@ -19,3 +19,17 @@ build their request URLs from the same services API base URL:
 
 This preserves the cloud API routes for non-Satellite runs and sends Satellite
 waits through the configured proxy path.
+
+## Inventory and Advisor TLS verification
+
+Direct Inventory and Advisor `requests` use the same TLS verify setting as the
+`external_inventory` fixture:
+
+1. Dynaconf `insights.ca_path` when set (Satellite profiles typically point at
+   `/etc/rhsm/ca/katello-server-ca.pem`)
+2. Otherwise `not insights.insecure` (system CA store when insecure is false)
+3. As a last resort inside `InsightsClient`, `cert_verify` from
+   `insights-client.conf`, then `True`
+
+Callers can also read the resolved value via
+`InsightsClient.get_services_api_verify()`.
