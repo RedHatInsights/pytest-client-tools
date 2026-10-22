@@ -248,20 +248,21 @@ def loop_until(predicate, poll_sec=5, timeout_sec=120, ignore_exceptions=()):
 
        assert loop_until(lambda: insights_client.is_registered)
 
-    The loop function will retry to run predicate every 5secs
-    until the total time exceeds timeout_sec.
+    The loop function checks predicate immediately, then retries every poll_sec
+    seconds until the total time exceeds timeout_sec.
     """
     start = time.time()
     ok = False
     exception = None
     while (not ok) and (time.time() - start < timeout_sec):
-        time.sleep(poll_sec)
         exception = None
         try:
             ok = predicate()
         except ignore_exceptions as exc:
             exception = exc
             ok = False
+        if not ok:
+            time.sleep(poll_sec)
     if exception is not None:
         raise exception
     return ok
