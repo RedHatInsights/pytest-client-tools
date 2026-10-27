@@ -3,6 +3,8 @@
 
 
 import time
+from unittest.mock import call, patch
+
 import pytest
 
 from pytest_client_tools.util import redact_arguments, loop_until
@@ -39,8 +41,10 @@ class TestLoopUntil:
 
     def test_loop_until_success_immediate(self):
         """Test that loop_until returns True when predicate succeeds immediately."""
-        result = loop_until(lambda: True, poll_sec=0.1, timeout_sec=1)
+        with patch("pytest_client_tools.util.time.sleep") as sleep:
+            result = loop_until(lambda: True, poll_sec=0.1, timeout_sec=1)
         assert result is True
+        sleep.assert_not_called()
 
     def test_loop_until_success_after_retries(self):
         """
@@ -53,14 +57,12 @@ class TestLoopUntil:
             counter += 1
             return counter >= 3
 
-        start_time = time.time()
-        result = loop_until(predicate, poll_sec=0.1, timeout_sec=2)
-        elapsed_time = time.time() - start_time
+        with patch("pytest_client_tools.util.time.sleep") as sleep:
+            result = loop_until(predicate, poll_sec=0.1, timeout_sec=2)
 
         assert result is True
         assert counter == 3
-        # Should take at least 2 polling intervals (0.2 seconds)
-        assert elapsed_time >= 0.2
+        assert sleep.call_args_list == [call(0.1), call(0.1)]
 
     def test_loop_until_timeout(self):
         """Test that loop_until returns False when predicate never succeeds."""
