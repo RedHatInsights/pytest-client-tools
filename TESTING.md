@@ -33,3 +33,9 @@ Direct Inventory and Advisor `requests` use the same TLS verify setting as the
 
 Callers can also read the resolved value via
 `InsightsClient.get_services_api_verify()`.
+
+`wait_for_inventory()` skips (does not fail) on TLS verification errors, and
+on HTTP 400 only for Satellite profiles (`ENV_FOR_DYNACONF` matching
+`satelliteNNN` / `satellite-capsule`), where `host_exists` is not implemented.
+A cloud HTTP 400 is still a failure (bad `insights_id` or API contract).
+Transient 404s still retry until timeout.

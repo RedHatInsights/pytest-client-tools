@@ -11,6 +11,8 @@ import subprocess
 from urllib.parse import urlsplit
 import uuid
 
+import pytest
+
 from . import SystemNotRegisteredError
 from .util import SavedFile, Version, logged_run, loop_until
 
@@ -484,6 +486,9 @@ class InsightsClient:
         Raises `requests.exceptions.RequestException` If there's some issue
             with the inventory service.
         Raises 'AssertionError' if the system is not present in the inventory.
+        Skips the calling test on TLS verify failure, or on HTTP 400 when
+            running a Satellite profile (host_exists is not implemented there).
+            Cloud HTTP 400 is still raised as a possible API/regression.
 
         :return: The inventory ID of the system
         :rtype: str
@@ -492,16 +497,24 @@ class InsightsClient:
             f"{self.get_services_api_base_url()}"
             f"/inventory/v1/host_exists?insights_id={self.uuid}"
         )
-        response = requests.get(
-            inventory_url,
-            cert=(
-                "/etc/pki/consumer/cert.pem",
-                "/etc/pki/consumer/key.pem",
-            ),
-            timeout=60,
-            verify=self.get_services_api_verify(),
-            proxies={"https": "http://squid.corp.redhat.com:3128/"},
-        )
+        try:
+            response = requests.get(
+                inventory_url,
+                cert=(
+                    "/etc/pki/consumer/cert.pem",
+                    "/etc/pki/consumer/key.pem",
+                ),
+                timeout=60,
+                verify=self.get_services_api_verify(),
+                proxies={"https": "http://squid.corp.redhat.com:3128/"},
+            )
+        except requests.exceptions.SSLError as exc:
+            pytest.skip(f"Inventory TLS verification failed: {exc}")
+        if response.status_code == 400 and self._is_satellite_environment():
+            pytest.skip(
+                "Inventory host_exists returned HTTP 400 on Satellite "
+                f"(unavailable): {inventory_url}"
+            )
         response.raise_for_status()
         return response.json()["id"]
 

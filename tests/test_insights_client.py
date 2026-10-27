@@ -3,6 +3,7 @@
 
 
 import pytest
+import requests
 
 from pytest_client_tools import insights_client as insights_client_mod
 from pytest_client_tools.insights_client import InsightsClient, InsightsClientConfig
@@ -165,3 +166,74 @@ def test_get_services_api_verify_defaults_true(tmp_path, monkeypatch):
     _patch_insights_client_config(monkeypatch, conf_file)
     client = InsightsClient()
     assert client.get_services_api_verify() is True
+
+
+def _inventory_client(tmp_path, monkeypatch):
+    conf_file = tmp_path / "file.conf"
+    conf_file.write_text("[insights-client]\n")
+    _patch_insights_client_config(monkeypatch, conf_file)
+    monkeypatch.setattr(InsightsClient, "uuid", "00000000-0000-0000-0000-000000000000")
+    monkeypatch.setattr(
+        InsightsClient,
+        "get_services_api_base_url",
+        lambda self: "https://cert.cloud.redhat.com/api",
+    )
+    return InsightsClient()
+
+
+def test_get_inventory_id_skips_on_ssl_error(tmp_path, monkeypatch):
+    client = _inventory_client(tmp_path, monkeypatch)
+
+    def _ssl(*args, **kwargs):
+        raise requests.exceptions.SSLError("CERTIFICATE_VERIFY_FAILED")
+
+    monkeypatch.setattr(insights_client_mod.requests, "get", _ssl)
+    with pytest.raises(pytest.skip.Exception, match="TLS verification failed"):
+        client._get_inventory_id()
+
+
+def test_get_inventory_id_skips_on_http_400_on_satellite(tmp_path, monkeypatch):
+    monkeypatch.setenv("ENV_FOR_DYNACONF", "satellite619")
+    client = _inventory_client(tmp_path, monkeypatch)
+
+    class _Resp:
+        status_code = 400
+
+    monkeypatch.setattr(
+        insights_client_mod.requests, "get", lambda *args, **kwargs: _Resp()
+    )
+    with pytest.raises(pytest.skip.Exception, match="HTTP 400 on Satellite"):
+        client._get_inventory_id()
+
+
+def test_get_inventory_id_raises_on_http_400_on_cloud(tmp_path, monkeypatch):
+    monkeypatch.setenv("ENV_FOR_DYNACONF", "prod")
+    client = _inventory_client(tmp_path, monkeypatch)
+
+    class _Resp:
+        status_code = 400
+
+        def raise_for_status(self):
+            raise requests.exceptions.HTTPError("400")
+
+    monkeypatch.setattr(
+        insights_client_mod.requests, "get", lambda *args, **kwargs: _Resp()
+    )
+    with pytest.raises(requests.exceptions.HTTPError):
+        client._get_inventory_id()
+
+
+def test_get_inventory_id_raises_on_http_404(tmp_path, monkeypatch):
+    client = _inventory_client(tmp_path, monkeypatch)
+
+    class _Resp:
+        status_code = 404
+
+        def raise_for_status(self):
+            raise requests.exceptions.HTTPError("404")
+
+    monkeypatch.setattr(
+        insights_client_mod.requests, "get", lambda *args, **kwargs: _Resp()
+    )
+    with pytest.raises(requests.exceptions.HTTPError):
+        client._get_inventory_id()
