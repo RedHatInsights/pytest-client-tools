@@ -38,6 +38,30 @@ Each fixture value is a list of `{"fields": {...}}` or `{"regex": ...}`
 rules; without an override, no known AVCs are skipped. The plugin validates and
 applies the rules supplied by the consuming project.
 
+## Configuration
+
+The configuration is read with [Dynaconf][dynaconf], and it is fully
+satisfiable from environment variables only: the settings files
+(`settings.toml`, `.secrets.toml`) are an optional override, so no file needs
+to exist. The name of an environment variable is the `PYTEST_CLIENT_TOOLS`
+prefix followed by the path of the settings key with each `.` replaced by
+`__`, all uppercase (for example, `candlepin.username` maps to
+`PYTEST_CLIENT_TOOLS_CANDLEPIN__USERNAME`). `ENV_FOR_DYNACONF` (a Dynaconf
+variable, without the prefix) selects the environment (`default`, `stage`,
+`prod`, `satelliteNNN`, ...); the environment variables override the values
+of the selected environment.
+
+Environment variable values are parsed as TOML values: bare values are used
+as strings unless they look like numbers, booleans or lists (for example
+`true`, `8443`, `["key-1", "key-2"]`); use TOML quoting (for example
+`'"12345"'`) to force a string that looks like a number.
+
+See the [full configuration reference][config-docs] for the mapping of the
+settings keys to environment variables and more details.
+
 ## License
 
-Distributed under the terms of the `MIT`_ license.
+Distributed under the terms of the [MIT](https://github.com/RedHatInsights/pytest-client-tools/blob/main/LICENSE) license.
+
+[dynaconf]: https://www.dynaconf.com/ "Dynaconf"
+[config-docs]: https://redhatinsights.github.io/pytest-client-tools/config/ "pytest-client-tools configuration reference"

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 dataclasses;python_version<"3.7"
-dynaconf
+dynaconf>=3.1.5,<4
 flake8
 pytest>=4
 requests
