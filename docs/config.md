@@ -16,6 +16,26 @@ are `settings.toml`, and `.secrets.toml`.
 The configuration file is optional; if not specified, pytest-client-tools
 disables certain features or falls back to default values.
 
+The supported Dynaconf versions depend on the Python version in use: on
+Python 3.8 and newer, Dynaconf 3.2.13 or later (but below 4) is required,
+which picks up the fix for CVE-2026-33154 (SSTI in Dynaconf's `@jinja`
+resolver; the 3.2.13 release fixes both `@jinja` and `@format`
+templating). On Python 3.6 and 3.7, the floor stays at the 3.1.x series
+(below 3.2) — resolving to 3.1.5 on Python 3.6 and 3.1.11 on Python 3.7 —
+as Dynaconf 3.2.x requires Python 3.8 or newer (and Dynaconf 3.1.7 through
+3.1.11 require Python 3.7 or newer, which is why the two interpreters
+resolve different versions).
+
+Note that the configuration loading of pytest-client-tools does pass
+values through Dynaconf's template resolvers: a `@jinja`-prefixed value in
+a settings file or in a `PYTEST_CLIENT_TOOLS_*` variable is evaluated when
+`jinja2` is installed (it is a dependency of neither this library nor
+Dynaconf core). From Dynaconf 3.2.13 the `@jinja` resolver is sandboxed —
+attribute access from the template is refused with a warning — while the
+3.1.x series kept for Python 3.6 and 3.7 is unsandboxed and is not fixed
+by any Dynaconf release: treat the settings source as trusted there, or
+keep `jinja2` out of the test environment.
+
 ## Environment variables
 
 Every configuration key can be provided through environment variables, so the
