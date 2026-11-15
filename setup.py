@@ -28,7 +28,8 @@ setup(
     python_requires=">=3.6",
     install_requires=[
         "dataclasses;python_version<'3.7'",
-        "dynaconf>=3.1.5,<4",
+        "dynaconf>=3.2.13,<4; python_version >= '3.8'",
+        "dynaconf>=3.1.5,<3.2; python_version < '3.8'",
         "pytest>=4",
         "requests",
         "toml",
