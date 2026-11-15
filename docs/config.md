@@ -224,5 +224,116 @@ explanation of each key, with the type of its value:
     This specifies whether to disable the validation of the SSL certificate
     of the Insights services.
 
+## Vault-backed values
+
+A settings key that holds a plain string value — a credential-shaped
+key like `candlepin.username`, `candlepin.password` or an element of
+`candlepin.activation_keys` — can refer to a value stored in a
+[Vault][vault] kv2 secret store instead of holding it directly: the
+value is a *sentinel* with the form
+
+```
+@vault:<path>:<key>
+```
+
+where `<path>` is the logical path of the secret (for example
+`apps/example/example-secret`) and `<key>` is the name of the value
+within that secret. For example:
+
+```toml
+[default.candlepin]
+host = "candlepin.example.test"
+port = 8443
+prefix = "/candlepin"
+username = "@vault:apps/example/example-secret:username"
+password = "@vault:apps/example/example-secret:password"
+activation_keys = ["@vault:apps/example/example-secret:activation-key"]
+org = "dummy-org"
+```
+
+Sentinels can appear in any section and any Dynaconf environment of
+both `settings.toml` and `.secrets.toml`, also as elements of list
+values (each element is resolved on its own), and in the
+`PYTEST_CLIENT_TOOLS_*` environment variables, and keep the normal
+layering: a sentinel in `.secrets.toml` overrides a plain value in
+`settings.toml`, the environment selected with `ENV_FOR_DYNACONF`
+decides which sentinel of which environment is resolved, and an
+environment variable wins over both files.
+
+The sentinels are resolved when the configuration is loaded, before
+the validation: the validators and the fixtures see the real values,
+or their absence. The list-valued settings
+(`candlepin.activation_keys`, `candlepin.environments`) are resolved
+from their *effective* value — the one of the highest layer — so a
+sentinel in a list that the selected environment or an environment
+variable replaces is not resolved at all.
+
+A sentinel that cannot be resolved leaves its key *absent*, exactly as
+if it was never defined: the validators' defaults apply, `must_exist`
+fires as for a missing key, and a consumer reading the key gets the
+same `KeyError` (or default) it gets for a value missing from the
+configuration. For keys whose value has a required shape — for
+example `candlepin.port`, which must be an integer — this behaves like
+a missing value: the external Candlepin is not considered configured
+and the depending tests skip. Use sentinels on such keys only when
+their resolution cannot fail.
+
+### Vault environment variables
+
+The access to the Vault server is configured through environment
+variables (and never through the command line):
+
+| Environment variable | Purpose |
+|---|---|
+| `VAULT_ADDR` | Address of the Vault server, for example `https://vault.example.com:8200`. Required whenever the credentials are set: there is no default address, so the resolver only ever contacts the server it was explicitly pointed at, and credentials without `VAULT_ADDR` fail the resolution of every sentinel (a warning by default, fatal in strict mode). |
+| `VAULT_TOKEN` | A static Vault token, sent as the `X-Vault-Token` header of each read. |
+| `VAULT_ROLE_ID` and `VAULT_SECRET_ID` | An AppRole: the two values are exchanged for a client token with a login request. |
+| `VAULT_SKIP_VERIFY` | Skip the validation of the TLS certificate of the Vault server; needed with self-signed certificates, it makes the connection vulnerable to man-in-the-middle attacks. |
+
+Either `VAULT_TOKEN` or both `VAULT_ROLE_ID` and `VAULT_SECRET_ID` must
+be set, together with `VAULT_ADDR`; this is meant for the secret
+delivery mechanisms that provide Vault credentials to the test host as
+a whole, so that the individual credential values do not need to be
+delivered one by one. The address is never defaulted: the resolution
+only ever contacts the server it was explicitly pointed at.
+
+The reads follow only the redirects that stay on the scheme, host and
+port of `VAULT_ADDR`: a redirect to a different origin is refused with
+an error naming the target, so the client token is never sent to a
+server the user did not configure. Same-origin redirects (for example
+a Vault HA cluster redirecting to another path of the same endpoint)
+keep working; a cluster that redirects across hosts must be reached by
+pointing `VAULT_ADDR` at a load balancer or at the active node itself.
+
+A failure of the connection or of the login is remembered for the
+whole resolution, and the login is attempted at most once: a Vault
+outage costs one request timeout per run, not one per sentinel.
+
+### Unresolved sentinels
+
+Not every run has access to the Vault server, so a sentinel that cannot
+be resolved does not fail the configuration load by default:
+
+| Situation | Behavior |
+|---|---|
+| No Vault credentials in the environment | The sentinel-valued keys are absent, exactly as if they were never defined: the validators' defaults apply, `must_exist` fires as for a missing key, and the tests that need the values skip exactly as they do when the keys are missing from the configuration. A list holding an unresolved sentinel is dropped entirely. A warning summarizes how many sentinels were left unresolved. |
+| Credentials set, but `VAULT_ADDR` is missing, or the login or the read fails | The same absent semantics as above, with a warning naming the missing variable or the failed Vault path or key (never the value). |
+| `PYTEST_CLIENT_TOOLS_VAULT_REQUIRED` set to a truthy value | Any failed resolution — a failed login or read, or credentials missing entirely — raises an error and stops the configuration load. |
+
+The strict value accepts any truthy spelling, case-insensitively:
+`1`, `true`, `yes` or `on` enable it, and anything else (including
+`0`, `no` and `off`) leaves it off.
+
+The warnings are raised through the Python `warnings` machinery, so a
+normal `pytest -q` run shows them in its warnings summary — also when
+every test skips and the run is otherwise silent about the cause.
+
+With the absent semantics, the tests that need the affected values
+skip or fail exactly as they do when the values are missing from the
+configuration. The strict mode is meant for automated runs that must
+fail loudly when Vault is unavailable, while keeping the graceful
+degradation for runs on shared infrastructure.
+
+[vault]: https://www.vaultproject.io/ "Vault"
 [dynaconf]: https://www.dynaconf.com/ "Dynaconf"
 [toml]: https://toml.io/ "TOML"
