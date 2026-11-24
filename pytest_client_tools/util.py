@@ -6,6 +6,7 @@ import functools
 import logging
 import os
 import pathlib
+import platform
 import shutil
 import subprocess
 import sys
@@ -13,6 +14,11 @@ import tempfile
 import time
 
 from .logger import LOGGER
+
+# rpm packages whose installed versions are part of the environment
+# metadata: the components under test, and the SELinux policy that
+# governs the AVC checks
+_RPM_PACKAGES = ("insights-client", "insights-core", "selinux-policy")
 
 
 @dataclasses.dataclass
@@ -100,8 +106,17 @@ class ArtifactsCollector:
         return p
 
     def copy(self, src):
+        """Copy a file in the artifacts directory.
+
+        The first capture of a file wins: a file collected under the same
+        name is never overwritten, so snapshots taken earlier (e.g. at test
+        end, before fixture teardowns rewrite the source files) are
+        preserved.
+        """
         self._path.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, self._path)
+        dst = self._path / pathlib.Path(src).name
+        if not dst.exists():
+            shutil.copy2(src, self._path)
 
     def write_text(self, fn, data):
         self._path.mkdir(parents=True, exist_ok=True)
@@ -133,10 +148,140 @@ class NodeRunningData:
             self.artifacts.copy(self.logfile)
 
 
+def _os_compose(path="/etc/os-release"):
+    """Return the build identifiers of the OS."""
+    try:
+        with open(path) as f:
+            fields = {}
+            for line in f:
+                key, sep, value = line.partition("=")
+                if sep:
+                    fields[key.strip()] = value.strip().strip('"')
+    except OSError:
+        return "unknown"
+    for key in ("BUILD_ID", "VERSION_ID"):
+        if fields.get(key):
+            return fields[key]
+    return "unknown"
+
+
+def _rpm_versions():
+    """Return the installed versions of the relevant rpm packages."""
+    versions = {}
+    for package in _RPM_PACKAGES:
+        try:
+            proc = logged_run(
+                ["rpm", "-q", package],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        except OSError:
+            # rpm is not available (e.g. non-rpm systems)
+            versions[package] = "unknown"
+            continue
+        versions[package] = (
+            proc.stdout.strip() if proc.returncode == 0 else "not installed"
+        )
+    return versions
+
+
+def _fips_enabled():
+    """Return the FIPS mode of the system ("enabled"/"disabled") or
+    "unknown"."""
+    try:
+        with open("/proc/sys/crypto/fips_enabled") as f:
+            value = f.read().strip()
+    except OSError:
+        return "unknown"
+    return {"1": "enabled", "0": "disabled"}.get(value, "unknown")
+
+
+def _git(command):
+    """Run a git command in the test sources, if they are a git checkout.
+
+    The command runs in ``$TMT_TREE`` when set (tmt/Testing Farm check
+    the sources out there, which may not be the current directory), and
+    in the current directory otherwise.
+
+    :return: The stripped stdout of the command, or ``None`` when git is
+        unavailable or the sources are not a git checkout
+    """
+    cwd = os.environ.get("TMT_TREE") or None
+    try:
+        proc = logged_run(
+            command,
+            check=False,
+            cwd=cwd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except OSError:
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.strip() or None
+
+
+def _test_branch():
+    """Return the git branch of the running test project.
+
+    CI environments expose the branch under test in environment
+    variables (``GIT_BRANCH``, ``BRANCH``, ``CHANGE_BRANCH``,
+    ``GITHUB_HEAD_REF``), which also cover checkouts without ``.git``;
+    they are preferred over querying the checkout, where a detached
+    ``HEAD`` (typical in CI) is not a branch name at all.
+    """
+    for env_var in ("GIT_BRANCH", "BRANCH", "CHANGE_BRANCH", "GITHUB_HEAD_REF"):
+        branch = os.environ.get(env_var)
+        if branch:
+            return branch
+    branch = _git(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+    if branch and branch != "HEAD":
+        return branch
+    return "unknown"
+
+
+def _test_commit():
+    """Return the short commit hash of the running test project.
+
+    This is what actually makes a run reproducible: the branch can move
+    (or be unknown for a detached checkout), the commit cannot.
+    """
+    return _git(["git", "rev-parse", "--short", "HEAD"]) or "unknown"
+
+
+def collect_environment_metadata():
+    """
+    Collect metadata about the environment the tests run in.
+
+    :return: The environment metadata as ``key: value`` lines
+    :rtype: str
+    """
+    lines = [
+        f"compose: {_os_compose()}",
+        f"arch: {platform.machine()}",
+        f"fips: {_fips_enabled()}",
+        f"ENV_FOR_DYNACONF: {os.environ.get('ENV_FOR_DYNACONF', '')}",
+        f"test branch: {_test_branch()}",
+        f"test commit: {_test_commit()}",
+    ]
+    lines.extend(f"{name}: {version}" for name, version in _rpm_versions().items())
+    return "\n".join(lines) + "\n"
+
+
 def logged_run(*args, **kwargs):
     logged_args = kwargs.pop("logged_args", None)
+    # never log the environment: it may carry credentials (e.g. Vault
+    # tokens), and the debug log is archived with the test artifacts.
+    # Log only option names to avoid leaking sensitive values passed in kwargs.
+    logged_option_names = tuple(sorted(k for k in kwargs if k != "env"))
     LOGGER.debug(
-        "running %s with options %s", logged_args if logged_args else args, kwargs
+        "running %s with options %s",
+        logged_args if logged_args else args,
+        logged_option_names,
     )
     check = kwargs.pop("check", False)
     # switch "text" (if present) into "universal_newlines" for Python < 3.7

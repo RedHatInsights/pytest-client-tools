@@ -4,10 +4,73 @@
 import os
 import re
 import subprocess
+import time
+import uuid
 from datetime import datetime
+
+from .logger import LOGGER
+from .util import logged_run
 
 _AUDIT_DATE_FORMAT = "%m/%d/%y"
 _AUDIT_ENV = {**os.environ, "LC_ALL": "C", "LC_TIME": "C"}
+
+
+def _run_audit_tool(cmd, check=False, timeout=None):
+    """Run an audit tool (ausearch/aureport/auditctl) uniformly.
+
+    All audit tools are invoked through this single helper so that every
+    AVC-related query behaves the same way: stable locale, lenient output
+    decoding, and a consistent error message on failure.
+
+    :param cmd: The command to run, as a list of arguments
+    :type cmd: list
+    :param check: Whether to raise an exception on a non-zero exit status
+    :type check: bool
+    :param timeout: Timeout for the command, in seconds
+    :return: The result of the command execution
+    :rtype: subprocess.CompletedProcess
+    """
+    result = logged_run(
+        cmd,
+        check=False,
+        timeout=timeout,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        errors="replace",
+        env=_AUDIT_ENV,
+    )
+    if check and result.returncode != 0:
+        stderr = result.stderr.strip()
+        raise RuntimeError(f"{cmd[0]} failed (exit {result.returncode}): {stderr}")
+    return result
+
+
+def flush_audit_events():
+    """Wait until already-generated audit events are visible to ausearch.
+
+    Writes a unique marker into the audit log and waits until it shows up
+    in the audit searches, guaranteeing that events generated before this
+    call are searchable by ausearch/aureport. If the marker does not show
+    up within ``timeout`` seconds, gives up with a warning: the AVC
+    excerpt may then be incomplete.
+    """
+    timeout = 10
+    time.sleep(1)
+    marker = f"pytest-client-tools-{uuid.uuid4()}"
+    _run_audit_tool(["auditctl", "-m", marker], check=True)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        proc = _run_audit_tool(["ausearch", "-i", "-m", "user"], check=False)
+        if marker in proc.stdout:
+            return
+        time.sleep(0.1)
+    LOGGER.warning(
+        "audit log flush timed out after %s s (marker %s not found); "
+        "the collected AVC excerpt may be incomplete",
+        timeout,
+        marker,
+    )
 
 
 def _parse_execve_event_block(event_lines):
@@ -97,9 +160,7 @@ def _check_process_contexts_from_audit(start_time, end_time=None):
 
     # ausearch and aureport parse dates using the locale's short-date format.
     # Use C's stable MM/DD/YY format; some audit releases reject four-digit years.
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, timeout=5, check=False, env=_AUDIT_ENV
-    )
+    result = _run_audit_tool(cmd, check=False, timeout=5)
     if result.returncode == 0 and result.stdout:
         current_event = []
         for line in result.stdout.splitlines():
@@ -123,11 +184,10 @@ class AuditLogEntry:
 
     def __str__(self):
         if self._text is None:
-            self._text = subprocess.run(
+            self._text = _run_audit_tool(
                 ["ausearch", "-i", "-a", f"{self.serial}"],
-                stdout=subprocess.PIPE,
                 check=True,
-            ).stdout.decode()
+            ).stdout
         return self._text
 
     @property
@@ -155,6 +215,21 @@ class SELinuxAVCChecker:
         self.end_time = datetime.now()
         return False
 
+    def finish(self):
+        """Close the monitoring period and collect all its AVCs.
+
+        Flushes the audit log, sets the end of the monitoring window, and
+        collects every AVC in the window (including skiplisted ones). After
+        this call, ``last_report`` holds the authoritative AVC excerpt for
+        the whole monitored period.
+
+        :return: All the AVC entries found in the period
+        :rtype: list
+        """
+        flush_audit_events()
+        self.end_time = datetime.now()
+        return list(self.get_avcs(skiplisted=False))
+
     def skip_avc_re(self, expression):
         expression = re.compile(expression)
         condition = lambda entry: re.search(expression, str(entry))  # noqa: E731
@@ -181,22 +256,17 @@ class SELinuxAVCChecker:
     _SEPARATOR = "=" * 63
 
     def get_avcs(self, skiplisted=True):
-        result = subprocess.run(
-            self.aureport_command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=_AUDIT_ENV,
-        )
+        result = _run_audit_tool(self.aureport_command)
         # aureport (like ausearch, which it shares exit-status semantics with)
         # exits 1 both when nothing was found and on minor argument/file
         # errors, so a non-zero exit alone isn't a reliable failure signal.
         # A clean "nothing found" run leaves stderr empty, so only treat this
         # as a hard failure when aureport actually wrote something to stderr.
-        stderr = result.stderr.decode(errors="replace").strip()
+        stderr = result.stderr.strip()
         if result.returncode != 0 and stderr:
             raise RuntimeError(f"aureport failed (exit {result.returncode}): {stderr}")
 
-        output = result.stdout.decode()
+        output = result.stdout
         self.last_report = output
         lines = [line for line in output.splitlines() if line.strip()]
 

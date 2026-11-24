@@ -16,6 +16,15 @@ import pytest
 from . import SystemNotRegisteredError
 from .util import SavedFile, Version, logged_run, loop_until
 
+# Files for the registration state of insights-client. They are archived
+# when the test ends, before the teardown of the `insights_client` fixture
+# unregisters the system and rewrites them.
+INSIGHTS_CLIENT_REGISTRATION_FILES = (
+    SavedFile(pathlib.Path("/etc/insights-client/.registered")),
+    SavedFile(pathlib.Path("/etc/insights-client/.unregistered")),
+    SavedFile(pathlib.Path("/etc/insights-client/machine-id")),
+)
+
 INSIGHTS_CLIENT_FILES_TO_SAVE = (
     SavedFile(pathlib.Path("/etc/insights-client/insights-client.conf")),
     SavedFile(
