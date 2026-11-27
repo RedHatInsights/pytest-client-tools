@@ -9,15 +9,17 @@ import logging
 import pathlib
 import shutil
 import subprocess
-import time
-import uuid
 
 import pytest
 import toml
 
 from .candlepin import Candlepin, ping_candlepin
 from .inventory import Inventory
-from .insights_client import InsightsClient, INSIGHTS_CLIENT_FILES_TO_SAVE
+from .insights_client import (
+    InsightsClient,
+    INSIGHTS_CLIENT_FILES_TO_SAVE,
+    INSIGHTS_CLIENT_REGISTRATION_FILES,
+)
 from .logger import LOGGER
 from .podman import Podman
 from .selinux import SELinuxAVCChecker, add_known_avcs_to_skiplist
@@ -28,7 +30,12 @@ from .subscription_manager import (
 )
 from .rhc import Rhc, RHC_FILES_TO_SAVE
 from .test_config import TestConfig
-from .util import ClientToolsPluginData, NodeRunningData, logged_run
+from .util import (
+    ClientToolsPluginData,
+    NodeRunningData,
+    collect_environment_metadata,
+    logged_run,
+)
 
 _MARKERS = {
     "candlepin": "tests requiring a self-deployed Candlepin",
@@ -42,7 +49,22 @@ _MARKERS = {
 _CANDLEPIN_FIXTURES = {x for x in _MARKERS.keys() if "candlepin" in x}
 
 
-def _save_and_archive(files, subdir):
+def _save_and_archive(files, subdir, archive_files=None):
+    """Back up files around a test, and archive them at its teardown.
+
+    :param files: the files to back up before the test and restore after;
+        files created during the test are removed, restoring the pre-test
+        state exactly
+    :param subdir: name of the backup subdirectory
+    :param archive_files: the files to archive at teardown; defaults to
+        ``files``. Files backed up but not archived here are expected to
+        be archived earlier (e.g. the insights-client registration
+        markers, captured at test end before this teardown rewrites
+        them); they are still restored like every other backed-up file.
+    """
+    if archive_files is None:
+        archive_files = files
+
     def decorator_wrapper(func):
         @functools.wraps(func)
         def function_wrapper(*args, **kwargs):
@@ -64,11 +86,18 @@ def _save_and_archive(files, subdir):
                     else:
                         shutil.copy2(f.path, backup_path)
             yield from func(*args, **kwargs)
-            for f in files:
+            for f in archive_files:
                 with contextlib.suppress(FileNotFoundError):
                     artifacts_collector.copy(f.path)
-                with contextlib.suppress(FileNotFoundError):
-                    shutil.move(str(backup_path / f.path.name), str(f.path))
+            # restore the pre-test state of every backed-up file
+            for f in files:
+                backup_file = backup_path / f.path.name
+                if backup_file.exists():
+                    shutil.move(str(backup_file), str(f.path))
+                else:
+                    # restore the pre-test state by removing the file, already archived
+                    with contextlib.suppress(FileNotFoundError):
+                        f.path.unlink()
 
         return function_wrapper
 
@@ -215,7 +244,14 @@ def subman_session(save_subman_session_files, request):
 
 
 @pytest.fixture
-@_save_and_archive(files=INSIGHTS_CLIENT_FILES_TO_SAVE, subdir="insights-client")
+@_save_and_archive(
+    files=(
+        *INSIGHTS_CLIENT_FILES_TO_SAVE,
+        *INSIGHTS_CLIENT_REGISTRATION_FILES,
+    ),
+    subdir="insights-client",
+    archive_files=INSIGHTS_CLIENT_FILES_TO_SAVE,
+)
 def save_insights_client_files(request):
     yield
 
@@ -232,8 +268,41 @@ def _insights_services_api_verify(test_config):
     return verify
 
 
+@pytest.fixture(autouse=True)
+def _archive_environment_metadata(request):
+    """Archive the environment metadata for every test.
+
+    The metadata describes the environment the whole session runs in, so
+    it is the same for every test; it is archived per test to keep each
+    bundle self-contained, similar to the SELinux AVC excerpt.
+    """
+    running_data = pytest._client_tools.running_data[request.node.nodeid]
+    running_data.artifacts.write_text("environment.txt", collect_environment_metadata())
+    yield
+
+
+def _archive_registration_state(insights_client, running_data):
+    """Archive the registration state of insights-client at test end.
+
+    Captures the registration markers and the machine-id, and snapshots
+    the output of ``insights-client --status``, all as the test ended
+    them and before the caller unregisters the system. Each file is
+    captured independently: exactly one of the two markers is normally
+    missing, and that must not abort the capture of the others.
+    """
+    for f in INSIGHTS_CLIENT_REGISTRATION_FILES:
+        with contextlib.suppress(OSError):
+            running_data.artifacts.copy(f.path)
+    with contextlib.suppress(OSError, subprocess.SubprocessError):
+        proc = insights_client.run("--status", check=False, selinux_context=None)
+        output = proc.stdout or ""
+        if proc.stderr:
+            output += ("\n" if output else "") + proc.stderr
+        running_data.artifacts.write_text("insights-client-status.txt", output)
+
+
 @pytest.fixture
-def insights_client(save_insights_client_files, test_config):
+def insights_client(save_insights_client_files, test_config, request):
     insights_client = InsightsClient(
         services_api_base_url=test_config.get("insights", "base_url"),
         services_api_verify=_insights_services_api_verify(test_config),
@@ -254,6 +323,14 @@ def insights_client(save_insights_client_files, test_config):
     try:
         yield insights_client
     finally:
+        # archive the registration state as the test ended it, before the
+        # unregister below (and the restore in save_insights_client_files)
+        # rewrites it; a failure here must not skip the unregister
+        with contextlib.suppress(OSError, KeyError):
+            _archive_registration_state(
+                insights_client,
+                pytest._client_tools.running_data[request.node.nodeid],
+            )
         with contextlib.suppress(subprocess.SubprocessError):
             insights_client.unregister()
 
@@ -394,31 +471,6 @@ def pytest_runtest_protocol(item, nextitem):
     logging.getLogger().addHandler(node_running_data.handler)
 
 
-def _flush_audit_events():
-    time.sleep(1)
-    marker = f"pytest-client-tools-{uuid.uuid4()}"
-    logged_run(
-        ["auditctl", "-m", marker],
-        check=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-    for _ in range(1, 100):
-        proc = logged_run(
-            f"ausearch -i -m user | grep -q {marker}",
-            check=False,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            shell=True,
-            text=True,
-        )
-        if proc.returncode == 0:
-            return
-        time.sleep(0.1)
-
-
 @pytest.fixture
 def client_tools_avc_skips():
     """Empty default; consuming projects provide their own exceptions here."""
@@ -438,13 +490,13 @@ def check_avcs(request, client_tools_avc_skips):
         return
 
     try:
-        _flush_audit_events()
-        checker.end_time = datetime.datetime.now()
-        avcs = list(checker.get_avcs(skiplisted=False))
+        avcs = checker.finish()
     except Exception as ex:
         pytest.fail(f"AVC check could not run: {ex}")
-    if avcs:
-        running_data.artifacts.write_text("selinux.log", checker.last_report)
+    # archive the authoritative AVC excerpt also on clean runs (the
+    # report holds the "no events of interest were found" placeholder),
+    # as evidence that the check ran
+    running_data.artifacts.write_text("selinux.log", checker.last_report)
 
     unexpected = [avc for avc in avcs if not checker.is_skiplisted(avc)]
     if unexpected:

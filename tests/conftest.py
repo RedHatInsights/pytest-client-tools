@@ -6,9 +6,32 @@ import os
 
 import pytest
 
+from pytest_client_tools.util import NodeRunningData
+
 os.environ["PYTEST_CLIENT_TOOLS_DISABLE_SELINUX"] = "1"
 
+# The plugin archives the log of every test that emits log records. For
+# this repository's own tests that would create files outside the
+# temporary directories; the archiving runs in a hook (after the test
+# fixtures), so the no-op must be installed for the whole session rather
+# than per-test.
+NodeRunningData.archive_test_log = lambda self: None
+
 pytest_plugins = "pytester"
+
+
+@pytest.fixture(autouse=True)
+def _archive_environment_metadata():
+    """Override the plugin's environment metadata capture with a no-op.
+
+    The plugin's own tests do not need the per-test environment metadata
+    (it describes the environment, not the unit under test), and letting
+    it run would create an artifacts/ entry for every test of this
+    repository's suite. Note that running the tests in a temporary
+    directory would not help: the plugin resolves the artifacts path
+    from the current directory before any fixture runs.
+    """
+    yield
 
 
 @pytest.fixture
